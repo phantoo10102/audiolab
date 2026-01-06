@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://unpkg.com/wavesurfer.js@7"></script>
+  <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
+
+  <style>
+    /* ---------- GLOBAL: prevent outer scrollbars / layout shift ---------- */
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;          /* never show browser/iframe scrollbars */
+      background: transparent;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      color: #e0e0e0;
+    }
+    * { box-sizing: border-box; }
+
+    /* ---------- CARD ---------- */
+    #waveform-container {
+      background: #0e1117;
+      border: 1px solid #262730;
+      border-radius: 10px;
+      padding: 12px;
+      height: 300px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* ---------- WAVE AREA ---------- */
+    #waveform {
+      width: 100%;
+      flex: 1 1 auto;
+      position: relative;
+      padding-top: 10px;
+
+      overflow-x: auto;          /* scroll inside waveform only */
+      overflow-y: hidden;
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable both-edges;
+    }
+    #waveform > div, #waveform wave, #waveform canvas { max-width: none !important; }
+
+    /* ---------- SCROLLBAR (dark + slim) ---------- */
+    #waveform::-webkit-scrollbar,
+    #waveform *::-webkit-scrollbar { height: 10px; }
+    #waveform::-webkit-scrollbar-track,
+    #waveform *::-webkit-scrollbar-track { background: #0e1117; border-radius: 999px; }
+    #waveform::-webkit-scrollbar-thumb,
+    #waveform *::-webkit-scrollbar-thumb {
+      background: #41444e;
+      border-radius: 999px;
+      border: 2px solid #0e1117;
+    }
+    #waveform::-webkit-scrollbar-thumb:hover,
+    #waveform *::-webkit-scrollbar-thumb:hover { background: #5a5f6b; }
+    /* Firefox */
+    #waveform { scrollbar-color: #41444e #0e1117; scrollbar-width: thin; }
+
+    /* ---------- LOADING / ERROR ---------- */
+    #loader {
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      background: rgba(14, 17, 23, 0.92);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      color: #4facfe;
+    }
+    #error-msg {
+      color: #ff4b4b;
+      font-weight: 700;
+      text-align: center;
+      display: none;
+      padding: 20px;
+    }
+
+    /* ---------- CONTROLS ROW ---------- */
+    #controls-row {
+      margin-top: 12px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      width: 100%;
+      justify-content: space-between;
+      gap: 12px;
+      flex: 0 0 auto;
+    }
+
+    .left-controls { display: flex; gap: 10px; align-items: center; min-width: 0; }
+    .right-controls { display: flex; gap: 14px; align-items: center; justify-content: flex-end; }
+
+    .slider-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #1c1e24;
+      padding: 4px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(65, 68, 78, 0.9);
+    }
+    .slider-group span { font-size: 14px; }
+
+    /* ---------- BUTTONS ---------- */
+    button {
+      padding: 0 14px;
+      height: 36px;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #fafafa;
+      font-weight: 800;
+      font-size: 13px;
+      background: #262730;
+      border: 1px solid rgba(65, 68, 78, 0.9);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: 0.15s ease;
+      user-select: none;
+      white-space: nowrap;
+    }
+    button:hover { filter: brightness(1.08); }
+    button.apply-btn {
+      background: #ff9800;
+      border: none;
+      color: #0e1117;
+    }
+    button.apply-btn:hover { filter: brightness(1.05); }
+
+    .info {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      color: #00f2fe;
+      margin-left: 6px;
+      font-size: 14px;
+      font-weight: 800;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 320px;
+    }
+
+    /* ---------- RANGE INPUTS ---------- */
+    input[type=range] {
+      cursor: pointer;
+      accent-color: #4facfe;
+      height: 4px;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="waveform-container">
+    <div id="loader">
+      <div style="margin-bottom: 10px;">🌊 Loading Waveform...</div>
+    </div>
+    <div id="error-msg"></div>
+
+    <div id="waveform"></div>
+
+    <div id="controls-row">
+      <div class="left-controls">
+        <button onclick="playPause()" id="playBtn" title="Shortcut: Space">▶️ Play</button>
+        <button onclick="sendDataToPython()" class="apply-btn" title="Shortcut: Enter">✅ APPLY</button>
+        <div class="info" id="status">Ready</div>
+        <div class="info" style="color:#9ca3af;font-size:12px;font-weight:700;margin-left:8px;" id="ver"></div>
+      </div>
+
+      <div class="right-controls">
+        <div class="slider-group" title="Zoom Level">
+          <span>🔍</span>
+          <input type="range" id="zoomSlider" min="0" max="200" value="0" oninput="setZoom(this.value)" style="width: 110px;">
+        </div>
+
+        <div class="slider-group" title="Playback Speed">
+          <span>🚀</span>
+          <input type="range" id="speedSlider" min="0.5" max="2.0" step="0.1" value="1.0" oninput="setSpeed(this.value)" style="width: 90px;">
+          <span id="speedValue" style="font-family: ui-monospace, monospace; color: #4facfe; width: 34px; text-align:right;">1.0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let debounceTimer = null;
+    // ... (Giữ nguyên hàm formatTime và Streamlit object) ...
+    function formatTime(seconds) {
+      if (seconds === undefined || isNaN(seconds)) return '00:00.00';
+      const m = Math.floor(seconds / 60);
+      const s = Math.floor(seconds % 60);
+      const ms = Math.round((seconds - Math.floor(seconds)) * 100);
+      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+    }
+
+    function sendMessageToStreamlitClient(type, data) {
+      window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data), "*");
+    }
+    const Streamlit = {
+      setComponentReady: function() { sendMessageToStreamlitClient("streamlit:componentReady", {apiVersion: 1}); },
+      setFrameHeight: function(height) { sendMessageToStreamlitClient("streamlit:setFrameHeight", {height: height}); },
+      setComponentValue: function(value) { sendMessageToStreamlitClient("streamlit:setComponentValue", {value: value}); }
+    };
+
+    let ws, wsRegions, activeRegion, currentUrl = null; // Đổi biến audioData -> currentUrl cho rõ nghĩa
+
+    // Hotkeys
+    document.addEventListener('keydown', function(event) {
+      if (event.code === 'Space') { event.preventDefault(); playPause(); }
+      else if (event.code === 'Enter') { event.preventDefault(); sendDataToPython(); }
+    });
+
+    // --- LOGIC NHẬN DATA TỪ PYTHON ĐÃ SỬA ĐỔI ---
+    window.addEventListener("message", function(event) {
+      if (event.data.type === "streamlit:render") {
+        const args = event.data.args;
+        
+        // Kiểm tra args.url thay vì args.audio_data
+        if (!args || !args.url) return;
+
+        // Chỉ init lại nếu URL thay đổi (file mới)
+        if (!currentUrl || currentUrl !== args.url) {
+          currentUrl = args.url;
+          initWaveSurfer(currentUrl, args.settings);
+        } 
+        // Nếu URL cũ (chỉ redraw region), cập nhật region
+        else if (wsRegions && activeRegion) {
+          const pyStart = args.settings.region_start;
+          const pyEnd = args.settings.region_end;
+          // Chỉ update nếu sai lệch > 0.1s để tránh loop
+          if (Math.abs(activeRegion.start - pyStart) > 0.1 || Math.abs(activeRegion.end - pyEnd) > 0.1) {
+            activeRegion.setOptions({ start: pyStart, end: pyEnd });
+            updateStatus(activeRegion);
+          }
+        }
+
+        Streamlit.setFrameHeight(320);
+      }
+    });
+
+    function initWaveSurfer(url, settings) {
+      const loader = document.getElementById('loader');
+      const errorMsg = document.getElementById('error-msg');
+      loader.style.display = 'flex';
+      errorMsg.style.display = 'none';
+
+      if (ws) { ws.destroy(); }
+      document.getElementById('waveform').innerHTML = '';
+
+      try {
+        ws = WaveSurfer.create({
+          container: '#waveform',
+          waveColor: '#4facfe',
+          progressColor: '#00f2fe',
+          height: 220,
+          url: url,          // <-- WaveSurfer 7 load trực tiếp từ URL này
+          cursorColor: '#ff7f0e',
+          cursorWidth: 2,
+          normalize: true,
+          minPxPerSec: 0,
+          autoScroll: true,
+          autoCenter: true
+          // Nếu file quá nặng (>200MB) vẫn lag, bạn có thể thêm dòng dưới để dùng native audio player:
+          // backend: 'MediaElement' 
+        });
+
+        wsRegions = ws.registerPlugin(WaveSurfer.Regions.create());
+
+        ws.on('ready', () => {
+          loader.style.display = 'none';
+          const duration = ws.getDuration();
+          
+          // Logic region mặc định
+          const start = settings.region_start || 0;
+          let end = settings.region_end || Math.min(10, duration);
+          if (end <= start) end = Math.min(start + 10, duration);
+
+          activeRegion = wsRegions.addRegion({
+            start: start,
+            end: end,
+            color: "rgba(255, 127, 14, 0.25)",
+            drag: true,
+            resize: true,
+            minLength: 0.5,
+            maxLength: duration
+          });
+
+          updateStatus(activeRegion);
+          document.getElementById('status').innerText = `Sel: ${formatTime(activeRegion.start)} - ${formatTime(activeRegion.end)} (${(activeRegion.end - activeRegion.start).toFixed(2)}s)`;
+        });
+
+        ws.on('error', (e) => {
+          loader.style.display = 'none';
+          errorMsg.innerText = "❌ Error: " + e;
+          errorMsg.style.display = 'block';
+        });
+
+        wsRegions.on('region-updated', (region) => {
+            // Cập nhật text hiển thị trên UI ngay lập tức cho mượt
+            const start = region.start;
+            const end = region.end;
+            const duration = end - start;
+            document.getElementById("status").innerText = 
+                `Sel: ${start.toFixed(2)}s - ${end.toFixed(2)}s (${duration.toFixed(2)}s)`;
+
+            // --- LOGIC AUTO-SYNC MỚI (DEBOUNCE) ---
+            // Xóa timer cũ nếu người dùng vẫn đang kéo chuột
+            if (debounceTimer) clearTimeout(debounceTimer);
+
+            // Đặt timer mới: Chỉ gửi về Python khi người dùng dừng kéo 300ms
+            debounceTimer = setTimeout(() => {
+                sendDataToPythonAuto(start, end);
+            }, 300); 
+        });
+
+        wsRegions.on('region-clicked', (region, e) => { e.stopPropagation(); activeRegion = region; region.play(); updateStatus(region); });
+
+        ws.on('play', () => { document.getElementById('playBtn').innerHTML = '⏸️ Pause'; });
+        ws.on('pause', () => { document.getElementById('playBtn').innerHTML = '▶️ Play'; });
+
+        // Reset controls
+        document.getElementById('zoomSlider').value = 0;
+        document.getElementById('speedSlider').value = 1.0;
+        document.getElementById('speedValue').innerText = '1.0';
+
+      } catch (err) {
+        loader.style.display = 'none';
+        errorMsg.innerText = "❌ Error: " + err;
+        errorMsg.style.display = 'block';
+      }
+    }
+
+    // ... (Giữ nguyên các hàm updateStatus, playPause, setZoom, setSpeed, sendDataToPython, Streamlit setup) ...
+    function updateStatus(region) {
+      const s = formatTime(region.start);
+      const e = formatTime(region.end);
+      const dur = (region.end - region.start).toFixed(2);
+      document.getElementById('status').innerText = `Sel: ${s} - ${e} (${dur}s)`;
+    }
+
+    function playPause() { if (ws) ws.playPause(); }
+    function setZoom(value) { if (ws) ws.zoom(Number(value)); }
+    function setSpeed(value) {
+      const v = Number(value);
+      if (ws) ws.setPlaybackRate(v);
+      document.getElementById('speedValue').innerText = String(value);
+    }
+
+    function sendDataToPythonAuto(start, end) {
+        Streamlit.setComponentValue({
+            start: start,
+            end: end,
+            // Dùng Date.now() để tạo ID mới mỗi lần auto-sync -> Python sẽ nhận diện là change mới
+            apply_id: Date.now(), 
+            source: "waveform_auto"
+        });
+        // Lưu ý: Không thay đổi style nút APPLY ở đây để tránh làm phiền user
+    }
+    function sendDataToPython() {
+      if (activeRegion) {
+        Streamlit.setComponentValue({
+          start: activeRegion.start,
+          end: activeRegion.end,
+          selection_applied: true,
+          apply_id: Date.now()
+        });
+
+        const btn = document.querySelector('.apply-btn');
+        const oldText = btn.innerHTML;
+        btn.innerHTML = "👌 SENT!";
+        setTimeout(() => btn.innerHTML = oldText, 900);
+      }
+    }
+    // 3. Thêm hàm gửi dữ liệu tự động (không làm đổi màu nút Apply)
+    
+
+    Streamlit.setComponentReady();
+    Streamlit.setFrameHeight(320);
+  </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# Configuration
+config.yaml
+data/config/.secret_key
+data/config/user_settings.yaml
+
+# Keep example config
+!config.yaml.example
