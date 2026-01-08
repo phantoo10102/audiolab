@@ -1,6 +1,7 @@
 import os
 import logging
 import time
+import concurrent.futures
 from pathlib import Path
 from typing import Dict, Any, List
 
@@ -96,6 +97,7 @@ class SeparationService:
         model_name: str = None,
         progress_callback=None,
         job_id: str = None,
+        cancel_event=None,
         **kwargs,
     ) -> Dict[str, Any]:
         """
@@ -120,6 +122,10 @@ class SeparationService:
 
         logger.info("Separation started", extra=extra_log)
 
+        def check_cancel():
+            if cancel_event and cancel_event.is_set():
+                raise concurrent.futures.CancelledError("Separation cancelled")
+
         # Helper báo cáo tiến độ
         def report(p):
             if progress_callback:
@@ -129,6 +135,7 @@ class SeparationService:
                     pass
 
         report(0)  # START
+        check_cancel()
 
         try:
             # Lazy Import Pipeline
@@ -140,6 +147,7 @@ class SeparationService:
             # --- STAGE 1: INIT ---
             report(10)
             report(20)
+            check_cancel()
 
             # --- STAGE 2: PROCESS ---
             # Demucs output sẽ nằm trong data/output/separation
@@ -151,10 +159,14 @@ class SeparationService:
             # Gọi Pipeline (đã fix lỗi WindowsPath trước đó)
             # DemucsPipeline.separate chỉ trả về info cơ bản, ta cần scan file thủ công
             pipeline_result = DemucsPipeline.separate(
-                input_path=input_path, output_dir=sep_base_dir, model_name=model_name
+                input_path=input_path,
+                output_dir=sep_base_dir,
+                model_name=model_name,
+                cancel_event=cancel_event,
             )
 
             report(80)  # Separation Done
+            check_cancel()
 
             # --- STAGE 3: SCAN STEMS & BUILD RESULT ---
             # Demucs tạo thư mục theo cấu trúc: output_dir / model_name / track_name / stems.wav

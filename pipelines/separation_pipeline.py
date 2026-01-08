@@ -1,7 +1,9 @@
 import sys
 import logging
 import subprocess
-import os
+import os 
+import time
+import concurrent.futures 
 from pathlib import Path
 from typing import Dict, Any, List
 from utils.logging_config import get_session_id
@@ -12,7 +14,10 @@ logger = logging.getLogger(__name__)
 class DemucsPipeline:
     @staticmethod
     def separate(
-        input_path: str, output_dir: Path, model_name: str = "htdemucs"
+        input_path: str,
+        output_dir: Path,
+        model_name: str = "htdemucs",
+        cancel_event=None,
     ) -> Dict[str, Any]:
         """
         Xây dựng và thực thi lệnh Demucs thông qua subprocess.
@@ -67,16 +72,37 @@ class DemucsPipeline:
             env = os.environ.copy()
             env["PYTHONUTF8"] = "1"
             env["PYTHONIOENCODING"] = "utf-8"
-
-            result = subprocess.run(
+ 
+            process = subprocess.Popen(
                 cmd,
-                check=True,
                 text=True,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 encoding="utf-8",
                 errors="replace",
                 env=env,
             )
+
+            while True:
+                if cancel_event and cancel_event.is_set():
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
+                    raise concurrent.futures.CancelledError(
+                        "Demucs subprocess cancelled"
+                    )
+                if process.poll() is not None:
+                    break
+                time.sleep(0.1)
+
+            stdout, stderr = process.communicate()
+            if process.returncode != 0:
+                raise subprocess.CalledProcessError(
+                    process.returncode, cmd, output=stdout, stderr=stderr
+                )
 
             # Log output từ Demucs (nếu cần debug kỹ hơn thì đổi sang info)
             logger.debug(
@@ -84,7 +110,7 @@ class DemucsPipeline:
                 extra={
                     "session_id": session_id,
                     "operation": "demucs_separate",
-                    "stdout": result.stdout,
+                    "stdout": stdout,
                 },
             )
 
@@ -94,8 +120,8 @@ class DemucsPipeline:
             return {
                 "success": True,
                 "model_name": model_name,
-                "raw_stdout": result.stdout,
-                "raw_stderr": result.stderr,
+                "raw_stdout": stdout,
+                "raw_stderr": stderr,
             }
 
         except subprocess.CalledProcessError as e:
@@ -112,6 +138,16 @@ class DemucsPipeline:
             logger.error(f"Demucs stderr: {e.stderr}")
 
             raise RuntimeError(f"Demucs processing failed: {e.stderr}")
+
+        except concurrent.futures.CancelledError:
+            logger.info(
+                "Demucs subprocess cancelled",
+                extra={
+                    "session_id": session_id,
+                    "operation": "demucs_separate",
+                },
+            )
+            raise
 
         except Exception as e:
             # Bắt các lỗi khác (ví dụ: không tìm thấy executable, lỗi permission)
