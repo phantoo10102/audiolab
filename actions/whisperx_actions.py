@@ -39,8 +39,11 @@ def _run_whisperx_task(
         raise RuntimeError(f"Load Model Failed: {load_res['message']}")
 
     # 2. Transcribe
+    from utils.whisperx_languages import normalize_whisper_language
+
+    normalized_language = normalize_whisper_language(language)
     trans_res = whisperx_service.transcribe(
-        audio_path=input_path, language=language, batch_size=batch_size
+        audio_path=input_path, language=normalized_language, batch_size=batch_size
     )
     if not trans_res["success"]:
         raise RuntimeError(f"Transcription Failed: {trans_res['message']}")
@@ -142,13 +145,11 @@ def run_whisperx_callback():
     if target_model == "turbo v3":
         target_model = "large-v3-turbo"  # Mapping ví dụ
 
-    target_lang = st.session_state.get("whisperx_language", "en")
-    if target_lang == "Auto":
-        target_lang = None
-    elif target_lang == "Anh":
-        target_lang = "en"
-    elif target_lang == "Việt":
-        target_lang = "vi"
+    from utils.whisperx_languages import normalize_whisper_language
+
+    target_lang = normalize_whisper_language(
+        st.session_state.get("whisperx_language")
+    )
 
     batch_size = 16
     export_format = st.session_state.get("whisperx_export_format", "Text")

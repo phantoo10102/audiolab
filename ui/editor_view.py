@@ -289,11 +289,19 @@ def render_editor_view(manager):
                 )
 
                 with c_lang:
+                    from utils.whisperx_languages import (
+                        LANGUAGE_LABELS,
+                        LANGUAGE_OPTION_CODES,
+                    )
+
                     st.selectbox(
                         "Language",
-                        ["Auto", "Anh", "Việt", "Trung", "Hàn", "Nhật"],
+                        LANGUAGE_OPTION_CODES,
                         key="whisperx_language",
                         disabled=is_processing,
+                        format_func=lambda code: LANGUAGE_LABELS.get(
+                            code, code or "Auto"
+                        ),
                     )
                 with c_model:
                     # Code cũ...
