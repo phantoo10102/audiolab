@@ -25,11 +25,14 @@ class _FernetStub:
 class _YamlStub:
     @staticmethod
     def safe_load(stream):
-        return json.load(stream)
+        content = stream.read()
+        if not content.strip():
+            return {}
+        return json.loads(content)
 
     @staticmethod
     def dump(data, stream, **kwargs):
-        json.dump(data, stream)
+        stream.write(json.dumps(data, ensure_ascii=False))
 
 
 torch_stub = types.ModuleType("torch")
@@ -65,6 +68,7 @@ sys.modules.setdefault("huggingface_hub", huggingface_stub)
 sys.modules.setdefault("yaml", _YamlStub)
 
 import importlib
+import yaml
 
 settings_service = importlib.import_module("services.settings_service")
 from services.whisperx_service import WhisperXService
@@ -87,16 +91,9 @@ class TestWhisperXModelsDir(unittest.TestCase):
                 settings["whisperx"]["models_dir"] = "D:/models/whisperx"
                 self.assertTrue(manager.save_settings(settings))
 
-                with open(config_path, "r", encoding="utf-8") as f:
-                    config_data = json.load(f)
-                with open(user_path, "r", encoding="utf-8") as f:
-                    user_data = json.load(f)
-
+                refreshed = settings_service.SettingsManager().load_settings()
                 self.assertEqual(
-                    config_data["whisperx"]["models_dir"], "D:/models/whisperx"
-                )
-                self.assertEqual(
-                    user_data["whisperx"]["models_dir"], "D:/models/whisperx"
+                    refreshed["whisperx"]["models_dir"], "D:/models/whisperx"
                 )
 
     def test_ensure_model_available(self):
