@@ -25,6 +25,7 @@ def _run_whisperx_task(
     batch_size: int,
     session_id: str,
     export_format: str = "Text",
+    alignment_level: str = "Đoạn",
 ) -> Dict[str, Any]:
     """
     Hàm thực thi logic nặng của WhisperX.
@@ -46,6 +47,10 @@ def _run_whisperx_task(
 
     segments = trans_res["segments"]
     full_text = "\n".join([seg["text"].strip() for seg in segments])
+
+    from utils.whisperx_alignment import apply_alignment
+
+    aligned_segments = apply_alignment(segments, alignment_level)
 
     # 3. Save to File
     now = datetime.now()
@@ -69,12 +74,12 @@ def _run_whisperx_task(
         if safe_format == "srt":
             from utils.srt_formatter import segments_to_srt
 
-            srt_text = segments_to_srt(segments)
+            srt_text = segments_to_srt(aligned_segments)
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(srt_text)
         elif safe_format == "json":
             payload = {
-                "segments": segments,
+                "segments": aligned_segments,
                 "language": language,
                 "input_file": original_name,
             }
@@ -101,13 +106,14 @@ def _run_whisperx_task(
 
     # Kết quả trả về cho Main Thread
     return {
-        "segments": segments,
+        "segments": aligned_segments,
         "language": language,
         "input_file": original_name,
         "output_path": str(output_path) if output_path else None,
         "full_text": full_text,
         "total_duration": total_elapsed,
         "export_format": export_format,
+        "alignment_level": alignment_level,
     }
 
 
@@ -146,6 +152,7 @@ def run_whisperx_callback():
 
     batch_size = 16
     export_format = st.session_state.get("whisperx_export_format", "Text")
+    alignment_level = st.session_state.get("whisperx_alignment", "Đoạn")
 
     # 3. Submit Job
     job_id = job_runner.submit(
@@ -156,6 +163,7 @@ def run_whisperx_callback():
         batch_size=batch_size,
         session_id=session_id,
         export_format=export_format,
+        alignment_level=alignment_level,
     )
 
     # 4. Update UI State
