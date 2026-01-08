@@ -107,6 +107,7 @@ def _run_whisperx_task(
         "output_path": str(output_path) if output_path else None,
         "full_text": full_text,
         "total_duration": total_elapsed,
+        "export_format": export_format,
     }
 
 

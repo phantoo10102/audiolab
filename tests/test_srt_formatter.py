@@ -26,6 +26,22 @@ class TestSrtFormatter(unittest.TestCase):
         expected = "1\n00:00:02,000 --> 00:00:02,000\nClamp end.\n"
         self.assertEqual(segments_to_srt(segments), expected)
 
+    def test_segments_to_srt_alt_keys(self):
+        segments = [{"start_time": 0.5, "end_time": 1.0, "text": "Alt keys."}]
+        expected = "1\n00:00:00,500 --> 00:00:01,000\nAlt keys.\n"
+        self.assertEqual(segments_to_srt(segments), expected)
+
+    def test_segments_to_srt_missing_end_uses_next_start(self):
+        segments = [
+            {"start": 0.0, "text": "First."},
+            {"start": 1.0, "end": 2.0, "text": "Second."},
+        ]
+        expected = (
+            "1\n00:00:00,000 --> 00:00:01,000\nFirst.\n\n"
+            "2\n00:00:01,000 --> 00:00:02,000\nSecond.\n"
+        )
+        self.assertEqual(segments_to_srt(segments), expected)
+
 
 if __name__ == "__main__":
     unittest.main()
