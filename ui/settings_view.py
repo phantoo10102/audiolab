@@ -33,6 +33,7 @@ def render_settings_view():
     # --- SECTION 2: WHISPERX ADVANCED ---
     with st.expander("🎙️ WhisperX Advanced", expanded=False):
         st.caption("These settings apply globally to all WhisperX runs.")
+        current_settings.setdefault("whisperx", {})
 
         # Device selection
         current_settings["models"]["device"] = st.selectbox(
@@ -51,6 +52,17 @@ def render_settings_view():
                 st.warning(
                     "⚠️ Nếu bạn lưu cài đặt này, ứng dụng có thể bị lỗi khi chạy WhisperX."
                 )
+
+        # WhisperX models folder
+        current_settings["whisperx"]["models_dir"] = st.text_input(
+            "WhisperX Models Folder",
+            value=current_settings["whisperx"].get("models_dir", ""),
+            placeholder="D:\\AI_Space\\models\\whisperx or ./data/models/whisperx",
+            help=(
+                "Path to cache WhisperX models. Leave blank to use "
+                "the default data/models/whisperx folder."
+            ),
+        )
 
         # VAD Settings
         st.markdown("**Voice Activity Detection (VAD)**")
@@ -148,6 +160,7 @@ def render_settings_view():
             if settings_manager.save_settings(current_settings):
                 st.toast("✅ Settings saved to config.yaml", icon="✅")
                 st.caption("♻️ Configuration updated. Restart app if needed.")
+                st.session_state.user_settings = current_settings
             else:
                 st.error("Failed to save settings.")
 

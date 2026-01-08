@@ -25,7 +25,8 @@ def _run_whisperx_task(
     batch_size: int,
     session_id: str,
     export_format: str = "Text",
-    alignment_level: str = "Đoạn",
+    alignment_level: str = "Đoạn", 
+    models_dir: str | None = None, 
 ) -> Dict[str, Any]:
     """
     Hàm thực thi logic nặng của WhisperX.
@@ -34,7 +35,10 @@ def _run_whisperx_task(
     pipeline_start = time.time()
 
     # 1. Load Model
-    load_res = whisperx_service.load_model(model_name=model_name)
+    load_res = whisperx_service.load_model(
+        model_name=model_name,
+        models_dir=models_dir,
+    )
     if not load_res["success"]:
         raise RuntimeError(f"Load Model Failed: {load_res['message']}")
 
@@ -116,7 +120,8 @@ def _run_whisperx_task(
         "full_text": full_text,
         "total_duration": total_elapsed,
         "export_format": export_format,
-        "alignment_level": alignment_level,
+        "alignment_level": alignment_level, 
+        "models_dir": models_dir, 
     }
 
 
@@ -153,7 +158,9 @@ def run_whisperx_callback():
 
     batch_size = 16
     export_format = st.session_state.get("whisperx_export_format", "Text")
-    alignment_level = st.session_state.get("whisperx_alignment", "Đoạn")
+    alignment_level = st.session_state.get("whisperx_alignment", "Đoạn") 
+    settings = st.session_state.get("user_settings", {})
+    models_dir = settings.get("whisperx", {}).get("models_dir") 
 
     # 3. Submit Job
     job_id = job_runner.submit(
@@ -164,7 +171,8 @@ def run_whisperx_callback():
         batch_size=batch_size,
         session_id=session_id,
         export_format=export_format,
-        alignment_level=alignment_level,
+        alignment_level=alignment_level, 
+        models_dir=models_dir, 
     )
 
     # 4. Update UI State

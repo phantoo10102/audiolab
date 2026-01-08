@@ -6,12 +6,14 @@ from typing import Dict, Any, Tuple, Optional
 from cryptography.fernet import Fernet
 from huggingface_hub import whoami
 from utils.logging_config import get_session_id
+from utils.constants import DATA_MODELS_DIR
 
 logger = logging.getLogger(__name__)
 # Constants
 ROOT_DIR = Path(__file__).parent.parent
 ROOT_DIR = Path(__file__).parent.parent
 CONFIG_FILE = ROOT_DIR / "config.yaml"
+USER_SETTINGS_FILE = ROOT_DIR / "data" / "config" / "user_settings.yaml"
 KEY_FILE = (
     ROOT_DIR / "data" / "config" / ".secret_key"
 )  # Giữ nguyên key ở chỗ cũ để bảo mật
@@ -30,6 +32,7 @@ DEFAULT_SETTINGS = {
         "min_speakers": 1,
         "max_speakers": 5,
     },
+    "whisperx": {"models_dir": str(DATA_MODELS_DIR / "whisperx")},
     "experimental": {"enable_beta_features": False},
 }
 
@@ -126,6 +129,15 @@ class SettingsManager:
             except Exception as e:
                 logger.error(f"Failed to load config.yaml: {e}")
 
+        if USER_SETTINGS_FILE.exists():
+            try:
+                with open(USER_SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    user_config = yaml.safe_load(f) or {}
+
+                self._deep_update(merged, user_config)
+            except Exception as e:
+                logger.error(f"Failed to load user_settings.yaml: {e}")
+
         return merged
 
     def _deep_update(self, base, update):
@@ -136,7 +148,7 @@ class SettingsManager:
                 base[k] = v
 
     def save_settings(self, new_settings: Dict[str, Any]) -> bool:
-        """Save settings back to config.yaml"""
+        """Save settings back to config.yaml and user_settings.yaml"""
         try:
             # 1. Load current file content to preserve other fields
             current_config = {}
@@ -157,7 +169,18 @@ class SettingsManager:
                     allow_unicode=True,
                 )
 
-            logger.info("Settings saved to config.yaml")
+            user_config_dir = USER_SETTINGS_FILE.parent
+            user_config_dir.mkdir(parents=True, exist_ok=True)
+            with open(USER_SETTINGS_FILE, "w", encoding="utf-8") as f:
+                yaml.dump(
+                    new_settings,
+                    f,
+                    default_flow_style=False,
+                    sort_keys=False,
+                    allow_unicode=True,
+                )
+
+            logger.info("Settings saved to config.yaml and user_settings.yaml")
             return True
         except Exception as e:
             logger.error(f"Failed to save config.yaml: {e}")
