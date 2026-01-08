@@ -32,5 +32,5 @@ class TestSeparationPipelineEnv(unittest.TestCase):
         self.assertIn(input_path, cmd)
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": 
+    unittest.main() 

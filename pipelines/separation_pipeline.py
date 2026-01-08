@@ -1,9 +1,12 @@
 import sys
 import logging
-import subprocess
+import subprocess 
 import os
 import time
-import concurrent.futures
+import concurrent.futures 
+import os 
+import time
+import concurrent.futures  
 from pathlib import Path
 from typing import Dict, Any, List
 from utils.logging_config import get_session_id
@@ -71,8 +74,8 @@ class DemucsPipeline:
             # encoding='utf-8', errors='replace' để tránh lỗi charset trên Windows
             env = os.environ.copy()
             env["PYTHONUTF8"] = "1"
-            env["PYTHONIOENCODING"] = "utf-8"
-
+            env["PYTHONIOENCODING"] = "utf-8" 
+ 
             process = subprocess.Popen(
                 cmd,
                 text=True,
