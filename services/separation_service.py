@@ -15,10 +15,25 @@ logger = logging.getLogger(__name__)
 
 
 class SeparationService:
+    _ALLOWED_STEM_NAMES = {"vocals", "drums", "bass", "other"}
+    _MIN_STEM_COUNT = 2
+
+    @staticmethod
+    def _select_wav_files(stem_dir: Path) -> List[Path]:
+        wav_files = list(stem_dir.glob("*.wav"))
+        if not wav_files:
+            return []
+        preferred = [
+            wav_path
+            for wav_path in wav_files
+            if wav_path.stem.lower() in SeparationService._ALLOWED_STEM_NAMES
+        ]
+        return preferred or wav_files
+
     @staticmethod
     def _build_stems_from_dir(stem_dir: Path) -> List[Dict[str, Any]]:
         stems_list = []
-        wav_files = list(stem_dir.glob("*.wav"))
+        wav_files = SeparationService._select_wav_files(stem_dir)
         if not wav_files:
             return stems_list
 
@@ -60,10 +75,19 @@ class SeparationService:
         scan_candidates = recent_candidates or candidates
 
         def score_dir(path: Path) -> tuple[int, float]:
-            stem_count = len(list(path.glob("*.wav")))
+            stem_count = len(SeparationService._select_wav_files(path))
             return (stem_count, path.stat().st_mtime)
 
-        best = max(scan_candidates, key=score_dir, default=None)
+        scored = [(path, score_dir(path)) for path in scan_candidates]
+        filtered = [
+            (path, score)
+            for path, score in scored
+            if score[0] >= SeparationService._MIN_STEM_COUNT
+        ]
+        best_pool = filtered or scored
+        if not best_pool:
+            return None
+        best = max(best_pool, key=lambda item: item[1])[0]
         return best
 
     @staticmethod
