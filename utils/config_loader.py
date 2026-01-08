@@ -93,6 +93,9 @@ class Config:
                     "available_models": ["htdemucs"],
                 },
             },
+            "whisperx": {
+                "models_dir": "data/models/whisperx",
+            },
             "system": {
                 "jobs": {"timeout_seconds": 300, "max_workers": 4},
                 "history": {"max_steps": 10, "cleanup_interval": 10},

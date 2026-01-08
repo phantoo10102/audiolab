@@ -1,6 +1,7 @@
 import os
 import logging
 import time
+import concurrent.futures
 from pathlib import Path
 from typing import Dict, Any, List
 
@@ -15,12 +16,88 @@ logger = logging.getLogger(__name__)
 
 
 class SeparationService:
+    _ALLOWED_STEM_NAMES = {"vocals", "drums", "bass", "other"}
+    _MIN_STEM_COUNT = 2
+
+    @staticmethod
+    def _select_wav_files(stem_dir: Path) -> List[Path]:
+        wav_files = list(stem_dir.glob("*.wav"))
+        if not wav_files:
+            return []
+        preferred = [
+            wav_path
+            for wav_path in wav_files
+            if wav_path.stem.lower() in SeparationService._ALLOWED_STEM_NAMES
+        ]
+        return preferred or wav_files
+
+    @staticmethod
+    def _build_stems_from_dir(stem_dir: Path) -> List[Dict[str, Any]]:
+        stems_list = []
+        wav_files = SeparationService._select_wav_files(stem_dir)
+        if not wav_files:
+            return stems_list
+
+        try:
+            ref_audio = AudioSegment.from_wav(str(wav_files[0]))
+            duration = len(ref_audio) / 1000.0
+            sample_rate = ref_audio.frame_rate
+        except Exception:
+            duration = 0.0
+            sample_rate = 44100
+
+        for wav_path in wav_files:
+            stems_list.append(
+                {
+                    "name": wav_path.stem,
+                    "path": str(wav_path),
+                    "duration": duration,
+                    "sample_rate": sample_rate,
+                }
+            )
+        return stems_list
+
+    @staticmethod
+    def _find_best_stem_dir(
+        model_dir: Path, run_start_ts: float
+    ) -> Path | None:
+        if not model_dir.exists():
+            return None
+
+        candidates = [
+            p for p in model_dir.iterdir() if p.is_dir()
+        ]
+        if not candidates:
+            return None
+
+        recent_candidates = [
+            p for p in candidates if p.stat().st_mtime >= run_start_ts
+        ]
+        scan_candidates = recent_candidates or candidates
+
+        def score_dir(path: Path) -> tuple[int, float]:
+            stem_count = len(SeparationService._select_wav_files(path))
+            return (stem_count, path.stat().st_mtime)
+
+        scored = [(path, score_dir(path)) for path in scan_candidates]
+        filtered = [
+            (path, score)
+            for path, score in scored
+            if score[0] >= SeparationService._MIN_STEM_COUNT
+        ]
+        best_pool = filtered or scored
+        if not best_pool:
+            return None
+        best = max(best_pool, key=lambda item: item[1])[0]
+        return best
+
     @staticmethod
     def run_separation(
         input_path: str,
         model_name: str = None,
         progress_callback=None,
         job_id: str = None,
+        cancel_event=None,
         **kwargs,
     ) -> Dict[str, Any]:
         """
@@ -45,6 +122,10 @@ class SeparationService:
 
         logger.info("Separation started", extra=extra_log)
 
+        def check_cancel():
+            if cancel_event and cancel_event.is_set():
+                raise concurrent.futures.CancelledError("Separation cancelled")
+
         # Helper báo cáo tiến độ
         def report(p):
             if progress_callback:
@@ -54,6 +135,7 @@ class SeparationService:
                     pass
 
         report(0)  # START
+        check_cancel()
 
         try:
             # Lazy Import Pipeline
@@ -65,19 +147,26 @@ class SeparationService:
             # --- STAGE 1: INIT ---
             report(10)
             report(20)
+            check_cancel()
 
             # --- STAGE 2: PROCESS ---
             # Demucs output sẽ nằm trong data/output/separation
             sep_base_dir = DATA_OUTPUT_DIR / "separation"
             sep_base_dir.mkdir(parents=True, exist_ok=True)
 
+            run_start_ts = time.time()
+
             # Gọi Pipeline (đã fix lỗi WindowsPath trước đó)
             # DemucsPipeline.separate chỉ trả về info cơ bản, ta cần scan file thủ công
             pipeline_result = DemucsPipeline.separate(
-                input_path=input_path, output_dir=sep_base_dir, model_name=model_name
+                input_path=input_path,
+                output_dir=sep_base_dir,
+                model_name=model_name,
+                cancel_event=cancel_event,
             )
 
             report(80)  # Separation Done
+            check_cancel()
 
             # --- STAGE 3: SCAN STEMS & BUILD RESULT ---
             # Demucs tạo thư mục theo cấu trúc: output_dir / model_name / track_name / stems.wav
@@ -91,29 +180,30 @@ class SeparationService:
             stems_list = []
 
             if expected_stem_dir.exists():
-                # Tìm tất cả file wav trong thư mục này
-                wav_files = list(expected_stem_dir.glob("*.wav"))
+                stems_list = SeparationService._build_stems_from_dir(
+                    expected_stem_dir
+                )
 
-                if wav_files:
-                    # Lấy metadata từ file đầu tiên (giả sử các stem có cùng length/rate)
-                    try:
-                        ref_audio = AudioSegment.from_wav(str(wav_files[0]))
-                        duration = len(ref_audio) / 1000.0
-                        sample_rate = ref_audio.frame_rate
-                    except Exception:
-                        duration = 0.0
-                        sample_rate = 44100
-
-                    # Xây dựng danh sách dictionary cho từng stem
-                    for wav_path in wav_files:
-                        stems_list.append(
-                            {
-                                "name": wav_path.stem,  # vocals, drums, bass, other
-                                "path": str(wav_path),  # convert Path -> str
-                                "duration": duration,
-                                "sample_rate": sample_rate,
-                            }
-                        )
+            if not stems_list:
+                model_dir = sep_base_dir / model_name
+                fallback_dir = SeparationService._find_best_stem_dir(
+                    model_dir, run_start_ts
+                )
+                if fallback_dir:
+                    logger.warning(
+                        "Expected demucs dir not found; using fallback dir",
+                        extra={
+                            "session_id": session_id,
+                            "job_id": job_id,
+                            "expected_path": str(expected_stem_dir),
+                            "fallback_path": str(fallback_dir),
+                            "operation": "scan_stems_fallback",
+                        },
+                    )
+                    expected_stem_dir = fallback_dir
+                    stems_list = SeparationService._build_stems_from_dir(
+                        expected_stem_dir
+                    )
 
             # Nếu không tìm thấy file theo đường dẫn dự kiến, thử fallback scan (tùy chọn)
             if not stems_list:

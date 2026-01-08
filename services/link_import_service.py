@@ -3,6 +3,7 @@ import logging
 import time
 import random
 import socket
+import json
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.error import URLError
@@ -104,7 +105,7 @@ class LinkImportService:
             output_dir.mkdir(parents=True, exist_ok=True)
 
         # --- YT-DLP CONFIG ---
-        temp_filename_tpl = str(output_dir / f"%(title)s_%(id)s.%(ext)s")
+        temp_filename_tpl = str(output_dir / "%(id)s.%(ext)s")
 
         ydl_opts = {
             "format": "bestaudio/best",
@@ -142,6 +143,21 @@ class LinkImportService:
                     # nhưng postprocessor đã đổi thành .mp3
                     original_path = ydl.prepare_filename(info)
                     final_path = Path(original_path).with_suffix(".mp3")
+
+                    # Save title metadata for display/debug (sidecar)
+                    try:
+                        title_path = final_path.with_suffix(".json")
+                        title_payload = {
+                            "id": info.get("id", ""),
+                            "title": info.get("title", ""),
+                            "source_url": url,
+                        }
+                        title_path.write_text(
+                            json.dumps(title_payload, ensure_ascii=False, indent=2),
+                            encoding="utf-8",
+                        )
+                    except Exception:
+                        pass
 
                     # Fallback scan nếu tên file có ký tự lạ
                     if not final_path.exists():

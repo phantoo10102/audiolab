@@ -289,11 +289,19 @@ def render_editor_view(manager):
                 )
 
                 with c_lang:
+                    from utils.whisperx_languages import (
+                        LANGUAGE_LABELS,
+                        LANGUAGE_OPTION_CODES,
+                    )
+
                     st.selectbox(
                         "Language",
-                        ["Auto", "Anh", "Việt", "Trung", "Hàn", "Nhật"],
+                        LANGUAGE_OPTION_CODES,
                         key="whisperx_language",
                         disabled=is_processing,
+                        format_func=lambda code: LANGUAGE_LABELS.get(
+                            code, code or "Auto"
+                        ),
                     )
                 with c_model:
                     # Code cũ...
@@ -345,10 +353,25 @@ def render_editor_view(manager):
                 title = f"Transcript Result - {result.get('input_file', 'Unknown')}"
 
                 with st.expander(title, expanded=True):
+                    export_format = result.get(
+                        "export_format",
+                        st.session_state.get("whisperx_export_format", "Text"),
+                    )
+                    preview_value = result.get("full_text", "")
+                    if str(export_format).strip().lower() == "srt":
+                        try:
+                            from utils.srt_formatter import segments_to_srt
+
+                            preview_value = segments_to_srt(
+                                result.get("segments", [])
+                            )
+                        except Exception:
+                            preview_value = result.get("full_text", "")
+
                     # 1. Text Area
                     st.text_area(
                         "Nội dung phiên âm",
-                        value=result.get("full_text", ""),
+                        value=preview_value,
                         height=300,
                         disabled=True,
                     )

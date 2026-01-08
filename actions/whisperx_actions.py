@@ -1,5 +1,6 @@
 import streamlit as st
 import logging
+import json
 import os
 import time
 from pathlib import Path
@@ -18,7 +19,14 @@ logger = logging.getLogger(__name__)
 
 # --- WORKER FUNCTION (Chạy trong Background Thread) ---
 def _run_whisperx_task(
-    input_path: str, model_name: str, language: str, batch_size: int, session_id: str
+    input_path: str,
+    model_name: str,
+    language: str,
+    batch_size: int,
+    session_id: str,
+    export_format: str = "Text",
+    alignment_level: str = "Đoạn",
+    models_dir: str | None = None,
 ) -> Dict[str, Any]:
     """
     Hàm thực thi logic nặng của WhisperX.
@@ -27,13 +35,19 @@ def _run_whisperx_task(
     pipeline_start = time.time()
 
     # 1. Load Model
-    load_res = whisperx_service.load_model(model_name=model_name)
+    load_res = whisperx_service.load_model(
+        model_name=model_name,
+        models_dir=models_dir,
+    )
     if not load_res["success"]:
         raise RuntimeError(f"Load Model Failed: {load_res['message']}")
 
     # 2. Transcribe
+    from utils.whisperx_languages import normalize_whisper_language
+
+    normalized_language = normalize_whisper_language(language)
     trans_res = whisperx_service.transcribe(
-        audio_path=input_path, language=language, batch_size=batch_size
+        audio_path=input_path, language=normalized_language, batch_size=batch_size
     )
     if not trans_res["success"]:
         raise RuntimeError(f"Transcription Failed: {trans_res['message']}")
@@ -41,21 +55,46 @@ def _run_whisperx_task(
     segments = trans_res["segments"]
     full_text = "\n".join([seg["text"].strip() for seg in segments])
 
+    from utils.whisperx_alignment import apply_alignment
+
+    aligned_segments = apply_alignment(segments, alignment_level)
+
     # 3. Save to File
     now = datetime.now()
     date_folder = now.strftime("%d-%m-%Y")
     timestamp = now.strftime("%d%m%Y_%H%M%S")
 
     original_name = Path(input_path).stem.replace(" ", "_")
-    filename = f"TXT_{original_name}_{timestamp}.txt"
+    safe_format = (export_format or "Text").strip().lower()
+    if safe_format == "srt":
+        filename = f"SRT_{original_name}_{timestamp}.srt"
+    elif safe_format == "json":
+        filename = f"JSON_{original_name}_{timestamp}.json"
+    else:
+        filename = f"TXT_{original_name}_{timestamp}.txt"
 
     output_dir = DATA_OUTPUT_DIR / date_folder / "whisperx"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / filename
 
     try:
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(full_text)
+        if safe_format == "srt":
+            from utils.srt_formatter import segments_to_srt
+
+            srt_text = segments_to_srt(aligned_segments)
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(srt_text)
+        elif safe_format == "json":
+            payload = {
+                "segments": aligned_segments,
+                "language": language,
+                "input_file": original_name,
+            }
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+        else:
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(full_text)
 
         logger.info(
             "WhisperX file exported",
@@ -74,12 +113,15 @@ def _run_whisperx_task(
 
     # Kết quả trả về cho Main Thread
     return {
-        "segments": segments,
+        "segments": aligned_segments,
         "language": language,
         "input_file": original_name,
         "output_path": str(output_path) if output_path else None,
         "full_text": full_text,
         "total_duration": total_elapsed,
+        "export_format": export_format,
+        "alignment_level": alignment_level,
+        "models_dir": models_dir,
     }
 
 
@@ -108,15 +150,17 @@ def run_whisperx_callback():
     if target_model == "turbo v3":
         target_model = "large-v3-turbo"  # Mapping ví dụ
 
-    target_lang = st.session_state.get("whisperx_language", "en")
-    if target_lang == "Auto":
-        target_lang = None
-    elif target_lang == "Anh":
-        target_lang = "en"
-    elif target_lang == "Việt":
-        target_lang = "vi"
+    from utils.whisperx_languages import normalize_whisper_language
+
+    target_lang = normalize_whisper_language(
+        st.session_state.get("whisperx_language")
+    )
 
     batch_size = 16
+    export_format = st.session_state.get("whisperx_export_format", "Text")
+    alignment_level = st.session_state.get("whisperx_alignment", "Đoạn")
+    settings = st.session_state.get("user_settings", {})
+    models_dir = settings.get("whisperx", {}).get("models_dir")
 
     # 3. Submit Job
     job_id = job_runner.submit(
@@ -126,6 +170,9 @@ def run_whisperx_callback():
         language=target_lang,
         batch_size=batch_size,
         session_id=session_id,
+        export_format=export_format,
+        alignment_level=alignment_level,
+        models_dir=models_dir,
     )
 
     # 4. Update UI State
