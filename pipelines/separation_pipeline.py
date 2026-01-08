@@ -1,6 +1,7 @@
 import sys
 import logging
 import subprocess
+import os
 from pathlib import Path
 from typing import Dict, Any, List
 from utils.logging_config import get_session_id
@@ -63,6 +64,10 @@ class DemucsPipeline:
             # Thực thi lệnh
             # capture_output=True để bắt lấy logs từ Demucs
             # encoding='utf-8', errors='replace' để tránh lỗi charset trên Windows
+            env = os.environ.copy()
+            env["PYTHONUTF8"] = "1"
+            env["PYTHONIOENCODING"] = "utf-8"
+
             result = subprocess.run(
                 cmd,
                 check=True,
@@ -70,6 +75,7 @@ class DemucsPipeline:
                 capture_output=True,
                 encoding="utf-8",
                 errors="replace",
+                env=env,
             )
 
             # Log output từ Demucs (nếu cần debug kỹ hơn thì đổi sang info)
