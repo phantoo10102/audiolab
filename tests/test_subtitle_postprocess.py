@@ -80,6 +80,29 @@ class TestSubtitlePostprocess(unittest.TestCase):
                 any(abs(seg["end"] - b) < 1e-3 for b in boundaries)
             )
 
+    def test_cjk_trailing_single_char_repair(self):
+        text = (
+            "我身体不太好,天气太热了,不爱吃饭你多吃些水果,多喝水谢谢你,医生昨天北京的天气怎么样?"
+        )
+        segment = {"start": 0.0, "end": 18.0, "text": text}
+
+        processed = postprocess_subtitle_segments([segment], lang="zh")
+
+        for idx in range(len(processed) - 1):
+            prev_text = processed[idx]["text"]
+            next_text = processed[idx + 1]["text"]
+            self.assertFalse(prev_text.endswith("你") and next_text.startswith("多"))
+            self.assertFalse(prev_text.endswith("北") and next_text.startswith("京"))
+
+        combined = "".join(seg["text"] for seg in processed)
+        self.assertIn("你多吃些水果", combined)
+        self.assertIn("北京的天气", combined)
+
+        for idx, seg in enumerate(processed):
+            self.assertTrue(seg["text"])
+            if idx > 0:
+                self.assertGreaterEqual(seg["start"], processed[idx - 1]["end"])
+
 
 if __name__ == "__main__":
     unittest.main()

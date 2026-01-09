@@ -1,5 +1,4 @@
 import math
-import re
 from typing import Iterable
 
 
@@ -9,6 +8,7 @@ _SENTENCE_PUNCT = set("。！？?!")
 _MID_PUNCT = set(";；")
 _COMMA_PUNCT = set(",，、")
 _ALL_PUNCT = _CJK_PUNCT | _ASCII_PUNCT
+_STRONG_END_PUNCT = set("。！？?!")
 
 
 def is_cjk_lang(lang_code: str | None) -> bool:
@@ -122,7 +122,7 @@ def _split_by_length(text: str, *, lang: str | None, max_len: int) -> list[str]:
         return [text]
     if is_cjk_lang(lang):
         chars = "".join(text.split())
-        return [chars[i : i + max_len] for i in range(0, len(chars), max_len)]
+        return _split_cjk_by_length(chars, max_len=max_len)
 
     words = text.split()
     chunks = []
@@ -145,6 +145,85 @@ def _join_words(words: list[dict]) -> str:
         token = str(word.get("word", ""))
         parts.append(token)
     return "".join(parts).strip()
+
+
+def _is_cjk_char(ch: str) -> bool:
+    if not ch:
+        return False
+    return "\u4e00" <= ch <= "\u9fff"
+
+
+def _select_cjk_split(text: str, target: int, *, window: int = 20) -> int:
+    if target <= 1:
+        return max(1, target)
+    if target >= len(text):
+        return len(text)
+    start = max(1, target - window)
+    end = min(len(text) - 1, target + window)
+    best_idx = target
+    best_score = None
+
+    for idx in range(start, end + 1):
+        left_char = text[idx - 1]
+        score = abs(idx - target) * 1.0
+        if left_char in _STRONG_END_PUNCT:
+            score -= 8.0
+        elif left_char in _MID_PUNCT:
+            score -= 5.0
+        elif left_char in _COMMA_PUNCT:
+            score -= 3.0
+
+        if _is_cjk_char(left_char) and left_char not in _ALL_PUNCT:
+            score += 6.0
+
+        if best_score is None or score < best_score:
+            best_score = score
+            best_idx = idx
+
+    return best_idx
+
+
+def _split_cjk_by_length(text: str, *, max_len: int) -> list[str]:
+    if max_len <= 0:
+        return [text]
+    chunks = []
+    idx = 0
+    while idx < len(text):
+        target = min(len(text), idx + max_len)
+        if target == len(text):
+            chunks.append(text[idx:target])
+            break
+        split_at = _select_cjk_split(text, target, window=20)
+        if split_at <= idx:
+            split_at = min(len(text), idx + max_len)
+        chunks.append(text[idx:split_at])
+        idx = split_at
+    return [chunk for chunk in chunks if chunk]
+
+
+def _repair_trailing_cjk_fragments(segments: list[dict]) -> list[dict]:
+    if len(segments) < 2:
+        return segments
+    for idx in range(len(segments) - 1):
+        current = segments[idx]
+        next_seg = segments[idx + 1]
+        text = str(current.get("text", "")).strip()
+        next_text = str(next_seg.get("text", "")).strip()
+        if not text or not next_text:
+            continue
+        last_char = text[-1]
+        next_char = next_text[0]
+        if last_char in _STRONG_END_PUNCT:
+            continue
+        if (
+            _is_cjk_char(last_char)
+            and _is_cjk_char(next_char)
+            and last_char not in _ALL_PUNCT
+            and next_char not in _ALL_PUNCT
+        ):
+            current["text"] = text[:-1].rstrip()
+            next_seg["text"] = f"{last_char}{next_text}".lstrip()
+    return segments
 
 
 def _allocate_times(
@@ -286,6 +365,8 @@ def postprocess_subtitle_segments(
 ) -> list[dict]:
     processed: list[dict] = []
     for seg in segments or []:
+        has_words = isinstance(seg.get("words"), list) and seg.get("words")
+        segment_results: list[dict] = []
         for split in split_segment(
             seg,
             lang=lang,
@@ -302,11 +383,14 @@ def postprocess_subtitle_segments(
                 max_chars_per_line_cjk=max_chars_per_line_cjk,
                 max_lines=max_lines,
             )
-            processed.append(
+            segment_results.append(
                 {
                     "start": split.get("start", 0.0),
                     "end": split.get("end", 0.0),
                     "text": wrapped,
                 }
             )
+        if is_cjk_lang(lang) and not has_words:
+            segment_results = _repair_trailing_cjk_fragments(segment_results)
+        processed.extend(segment_results)
     return processed
