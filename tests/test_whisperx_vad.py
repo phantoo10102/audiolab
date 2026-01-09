@@ -235,6 +235,49 @@ class TestWhisperXTranscribeCompat(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(len(service.model.calls), 1)
 
+    def test_vad_token_used_for_pipeline(self):
+        service = whisperx_service_module.WhisperXService()
+        service.model = _ModelNoVad()
+
+        pipeline_calls = {}
+
+        pyannote_audio = types.ModuleType("pyannote.audio")
+
+        class _PipelineStub:
+            def __call__(self, _input):
+                return type(
+                    "Result",
+                    (),
+                    {"get_timeline": lambda self: type("T", (), {"support": lambda self: []})()},
+                )()
+
+        def _from_pretrained(model_id, use_auth_token=None):
+            pipeline_calls["model_id"] = model_id
+            pipeline_calls["token"] = use_auth_token
+            return _PipelineStub()
+
+        pyannote_audio.Pipeline = types.SimpleNamespace(from_pretrained=_from_pretrained)
+        sys.modules["pyannote.audio"] = pyannote_audio
+
+        with patch.object(
+            whisperx_service_module.whisperx,
+            "load_audio",
+            return_value=[0.0] * 16000,
+            create=True,
+        ), patch.object(
+            whisperx_service_module.WhisperXService,
+            "_resolve_vad_token",
+            return_value="hf_dummy_123",
+        ):
+            service.transcribe(
+                audio_path="audio.wav",
+                language="en",
+                batch_size=4,
+                vad_filter=True,
+            )
+
+        self.assertEqual(pipeline_calls["token"], "hf_dummy_123")
+
 
 if __name__ == "__main__":
     unittest.main()

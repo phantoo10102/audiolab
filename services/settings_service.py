@@ -35,6 +35,7 @@ DEFAULT_SETTINGS = {
     "whisperx": {
         "models_dir": str(DATA_MODELS_DIR / "whisperx"),
         "vad_enabled": False,
+        "vad_token": "",
     },
     "experimental": {"enable_beta_features": False},
 }
@@ -159,8 +160,12 @@ class SettingsManager:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                     current_config = yaml.safe_load(f) or {}
 
-            # 2. Merge new settings
-            self._deep_update(current_config, new_settings)
+            # 2. Merge new settings (exclude sensitive tokens from config.yaml)
+            sanitized = yaml.safe_load(yaml.dump(new_settings)) or {}
+            whisperx_block = sanitized.get("whisperx", {})
+            if isinstance(whisperx_block, dict):
+                whisperx_block.pop("vad_token", None)
+            self._deep_update(current_config, sanitized)
 
             # 3. Write back
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:

@@ -261,11 +261,13 @@ class WhisperXService:
 
             if vad_filter:
                 sample_rate = getattr(whisperx, "SAMPLE_RATE", 16000)
+                vad_token = self._resolve_vad_token()
                 try:
                     vad_intervals = self._get_vad_intervals(
                         waveform=audio,
                         sample_rate=sample_rate,
                         session_id=session_id,
+                        token=vad_token,
                     )
                 except Exception as exc:
                     logger.warning(
@@ -400,13 +402,13 @@ class WhisperXService:
         waveform,
         sample_rate: int,
         session_id: str,
+        token: str | None,
     ) -> list[tuple[float, float]]:
         from pyannote.audio import Pipeline
 
-        hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
         pipeline = Pipeline.from_pretrained(
             "pyannote/voice-activity-detection",
-            use_auth_token=hf_token,
+            use_auth_token=token,
         )
         audio_tensor = torch.tensor(waveform).float().unsqueeze(0)
         vad_result = pipeline({"waveform": audio_tensor, "sample_rate": sample_rate})
@@ -422,6 +424,19 @@ class WhisperXService:
             },
         )
         return segments
+
+    def _resolve_vad_token(self) -> str | None:
+        try:
+            from services.settings_service import settings_manager
+
+            settings = settings_manager.load_settings()
+            token = settings.get("whisperx", {}).get("vad_token")
+            if token:
+                return token
+        except Exception:
+            pass
+
+        return os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
 
     def _slice_audio(
         self,

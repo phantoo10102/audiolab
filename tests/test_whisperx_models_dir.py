@@ -90,6 +90,7 @@ class TestWhisperXModelsDir(unittest.TestCase):
                 settings.setdefault("whisperx", {})
                 settings["whisperx"]["models_dir"] = "D:/models/whisperx"
                 settings["whisperx"]["vad_enabled"] = True
+                settings["whisperx"]["vad_token"] = "hf_dummy_123"
                 self.assertTrue(manager.save_settings(settings))
 
                 refreshed = settings_service.SettingsManager().load_settings()
@@ -97,6 +98,7 @@ class TestWhisperXModelsDir(unittest.TestCase):
                     refreshed["whisperx"]["models_dir"], "D:/models/whisperx"
                 )
                 self.assertTrue(refreshed["whisperx"]["vad_enabled"])
+                self.assertEqual(refreshed["whisperx"]["vad_token"], "hf_dummy_123")
 
     def test_ensure_model_available(self):
         with TemporaryDirectory() as tmpdir:
