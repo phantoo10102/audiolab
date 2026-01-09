@@ -37,6 +37,5 @@ class TestLoggingConfig(unittest.TestCase):
         stream_handlers = [
             handler for handler in root_logger.handlers if isinstance(handler, logging.StreamHandler)
         ]
-        self.assertEqual(len(jsonl_handlers), 1)
+        self.assertEqual(len(jsonl_handlers), 3)
         self.assertEqual(len(stream_handlers), 1)
-
