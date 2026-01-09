@@ -41,7 +41,7 @@ sys.modules.setdefault("torch", torch_stub)
 
 whisperx_stub = types.ModuleType("whisperx")
 whisperx_stub.load_model = lambda *args, **kwargs: "model"
-sys.modules.setdefault("whisperx", whisperx_stub)
+sys.modules["whisperx"] = whisperx_stub
 sys.modules.setdefault("numpy", types.ModuleType("numpy"))
 pydub_stub = types.ModuleType("pydub")
 pydub_stub.AudioSegment = object
@@ -71,6 +71,7 @@ import importlib
 import yaml
 
 settings_service = importlib.import_module("services.settings_service")
+whisperx_service_module = importlib.import_module("services.whisperx_service")
 from services.whisperx_service import WhisperXService
 
 
@@ -109,16 +110,30 @@ class TestWhisperXModelsDir(unittest.TestCase):
             (model_dir / "small").mkdir()
             (model_dir / "small" / "model.bin").write_text("stub")
 
-            with patch.object(whisperx_stub, "load_model") as load_model:
+            with patch.object(
+                whisperx_service_module.whisperx, "load_model"
+            ) as load_model:
                 result = service.ensure_whisperx_model(
-                    model_dir, "small", device="cpu", compute_type="int8"
+                    model_dir,
+                    "small",
+                    device="cpu",
+                    compute_type="int8",
+                    language=None,
                 )
                 self.assertIsNone(result)
                 load_model.assert_not_called()
 
-            with patch.object(whisperx_stub, "load_model", return_value="model") as load_model:
+            with patch.object(
+                whisperx_service_module.whisperx,
+                "load_model",
+                return_value="model",
+            ) as load_model:
                 result = service.ensure_whisperx_model(
-                    model_dir, "medium", device="cpu", compute_type="int8"
+                    model_dir,
+                    "medium",
+                    device="cpu",
+                    compute_type="int8",
+                    language=None,
                 )
                 self.assertEqual(result, "model")
                 load_model.assert_called_once()
@@ -159,10 +174,16 @@ class TestWhisperXModelsDir(unittest.TestCase):
             model_dir = tmp_path / "missing_models"
 
             with patch.object(
-                whisperx_stub, "load_model", return_value="model"
+                whisperx_service_module.whisperx,
+                "load_model",
+                return_value="model",
             ) as load_model:
                 result = service.ensure_whisperx_model(
-                    model_dir, "small", device="cpu", compute_type="int8"
+                    model_dir,
+                    "small",
+                    device="cpu",
+                    compute_type="int8",
+                    language=None,
                 )
                 self.assertEqual(result, "model")
                 self.assertTrue(model_dir.exists())

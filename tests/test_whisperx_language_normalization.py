@@ -18,6 +18,7 @@ class TestWhisperxLanguageNormalization(unittest.TestCase):
     def test_normalize_label(self):
         self.assertEqual(normalize_whisper_language("Nhật"), "ja")
         self.assertEqual(normalize_whisper_language("Japanese"), "ja")
+        self.assertEqual(normalize_whisper_language("Trung"), "zh")
 
     def test_normalize_invalid(self):
         self.assertIsNone(normalize_whisper_language("Nhãt"))
