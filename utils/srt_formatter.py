@@ -28,6 +28,7 @@ def _normalize_segments(segments: list[dict]) -> list[dict]:
                 "start": start if start is not None else 0.0,
                 "end": end,
                 "text": seg.get("text", ""),
+                "words": seg.get("words"),
             }
         )
 
@@ -43,9 +44,13 @@ def _normalize_segments(segments: list[dict]) -> list[dict]:
     return normalized
 
 
-def segments_to_srt(segments: list[dict]) -> str:
+def segments_to_srt(segments: list[dict], *, lang: str | None = None) -> str:
     blocks = []
+    from utils.subtitle_postprocess import postprocess_subtitle_segments
+
     normalized = _normalize_segments(segments)
+    postprocessed = postprocess_subtitle_segments(normalized, lang=lang)
+    normalized = _normalize_segments(postprocessed)
     for index, seg in enumerate(normalized, start=1):
         start_ts = format_srt_timestamp(seg["start"])
         end_ts = format_srt_timestamp(seg["end"])

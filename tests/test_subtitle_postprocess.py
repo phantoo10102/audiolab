@@ -1,0 +1,85 @@
+import unittest
+
+from utils.subtitle_postprocess import postprocess_subtitle_segments
+
+
+class TestSubtitlePostprocess(unittest.TestCase):
+    def test_cjk_long_segment_splits_and_wraps(self):
+        text = (
+            "好的，我们今天要讨论一下这个问题，因为这个问题真的很重要，"
+            "如果你现在不理解，之后可能会很麻烦。你准备好了吗？"
+            "请认真听，我会尽量讲清楚，并且给出一些例子。"
+        )
+        segment = {"start": 0.368, "end": 29.630, "text": text}
+
+        processed = postprocess_subtitle_segments([segment], lang="zh")
+        self.assertGreater(len(processed), 3)
+
+        self.assertAlmostEqual(processed[0]["start"], segment["start"], places=3)
+        self.assertAlmostEqual(processed[-1]["end"], segment["end"], places=3)
+
+        for idx, seg in enumerate(processed):
+            if idx > 0:
+                self.assertGreaterEqual(seg["start"], processed[idx - 1]["end"])
+            duration = seg["end"] - seg["start"]
+            self.assertLessEqual(duration, 6.0 + 2.0)
+            lines = seg["text"].splitlines() if seg["text"] else [""]
+            self.assertLessEqual(len(lines), 2)
+            for line in lines:
+                self.assertLessEqual(len(line), 20)
+
+    def test_non_cjk_long_segment_splits_or_wraps(self):
+        text = (
+            "this is a long run on example without much punctuation and it keeps "
+            "going to simulate a subtitle cue that is far too long for any viewer "
+            "to read comfortably in a single block of text"
+        )
+        segment = {"start": 21.783, "end": 41.780, "text": text}
+
+        processed = postprocess_subtitle_segments([segment], lang="en")
+        self.assertGreaterEqual(len(processed), 1)
+
+        for seg in processed:
+            duration = seg["end"] - seg["start"]
+            self.assertLessEqual(duration, 8.0)
+            for line in seg["text"].splitlines():
+                self.assertEqual(line, line.strip())
+            for idx, char in enumerate(seg["text"]):
+                if char == "\n":
+                    before = seg["text"][idx - 1] if idx > 0 else ""
+                    after = seg["text"][idx + 1] if idx + 1 < len(seg["text"]) else ""
+                    self.assertFalse(before.isalpha() and after.isalpha())
+
+    def test_word_timestamp_path_split(self):
+        words = []
+        for idx in range(24):
+            words.append(
+                {
+                    "start": idx * 0.5,
+                    "end": (idx + 1) * 0.5,
+                    "word": f"word{idx} ",
+                }
+            )
+        segment = {
+            "start": 0.0,
+            "end": 12.0,
+            "text": " ".join(f"word{idx}" for idx in range(24)),
+            "words": words,
+        }
+
+        processed = postprocess_subtitle_segments([segment], lang="en")
+        boundaries = {w["start"] for w in words} | {w["end"] for w in words}
+
+        for seg in processed:
+            duration = seg["end"] - seg["start"]
+            self.assertLessEqual(duration, 6.0)
+            self.assertTrue(
+                any(abs(seg["start"] - b) < 1e-3 for b in boundaries)
+            )
+            self.assertTrue(
+                any(abs(seg["end"] - b) < 1e-3 for b in boundaries)
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

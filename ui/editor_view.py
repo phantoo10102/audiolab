@@ -363,7 +363,8 @@ def render_editor_view(manager):
                             from utils.srt_formatter import segments_to_srt
 
                             preview_value = segments_to_srt(
-                                result.get("segments", [])
+                                result.get("segments", []),
+                                lang=result.get("language"),
                             )
                         except Exception:
                             preview_value = result.get("full_text", "")
