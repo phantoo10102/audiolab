@@ -1,5 +1,10 @@
 import sys
 import os
+
+from utils.console_noise import configure_console_noise
+
+configure_console_noise()
+
 import streamlit as st
 
 # Setup Logging & Path
