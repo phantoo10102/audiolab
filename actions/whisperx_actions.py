@@ -27,6 +27,7 @@ def _run_whisperx_task(
     export_format: str = "Text",
     alignment_level: str = "Đoạn", 
     models_dir: str | None = None, 
+    vad_enabled: bool = False,
 ) -> Dict[str, Any]:
     """
     Hàm thực thi logic nặng của WhisperX.
@@ -57,7 +58,10 @@ def _run_whisperx_task(
 
     normalized_language = normalize_whisper_language(language)
     trans_res = whisperx_service.transcribe(
-        audio_path=input_path, language=normalized_language, batch_size=batch_size
+        audio_path=input_path,
+        language=normalized_language,
+        batch_size=batch_size,
+        vad_filter=vad_enabled,
     )
     if not trans_res["success"]:
         raise RuntimeError(f"Transcription Failed: {trans_res['message']}")
@@ -171,6 +175,7 @@ def run_whisperx_callback():
     alignment_level = st.session_state.get("whisperx_alignment", "Đoạn") 
     settings = st.session_state.get("user_settings", {})
     models_dir = settings.get("whisperx", {}).get("models_dir") 
+    vad_enabled = st.session_state.get("whisperx_vad", "OFF") == "ON"
 
     # 3. Submit Job
     job_id = job_runner.submit(
@@ -183,6 +188,7 @@ def run_whisperx_callback():
         export_format=export_format,
         alignment_level=alignment_level, 
         models_dir=models_dir, 
+        vad_enabled=vad_enabled,
     )
 
     # 4. Update UI State

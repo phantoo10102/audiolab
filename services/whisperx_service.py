@@ -1,6 +1,8 @@
 # ===== FILE: services/whisperx_service.py =====
 import gc
+import inspect
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -222,7 +224,11 @@ class WhisperXService:
             return default_dir
 
     def transcribe(
-        self, audio_path: str, language: str = "en", batch_size: int = 16
+        self,
+        audio_path: str,
+        language: str | None = "en",
+        batch_size: int = 16,
+        vad_filter: bool | None = None,
     ) -> Dict[str, Any]:
         """
         Runs transcription with structured logging.
@@ -234,24 +240,76 @@ class WhisperXService:
             return {"success": False, "message": "Model not loaded"}
 
         try:
+            language_label = language or "auto"
             logger.info(
                 "Transcription started",
                 extra={
                     "session_id": session_id,
                     "operation": "whisperx_transcribe",
                     "input_file": Path(audio_path).name,
-                    "language": language,
+                    "language": language_label,
                     "batch_size": batch_size,
                 },
             )
 
-            # Load audio
             audio = whisperx.load_audio(audio_path)
-
-            # Transcribe
-            result = self.model.transcribe(
-                audio, batch_size=batch_size, language=language
+            transcribe_kwargs = self._build_transcribe_kwargs(
+                language=language,
+                batch_size=batch_size,
+                session_id=session_id,
             )
+
+            if vad_filter:
+                sample_rate = getattr(whisperx, "SAMPLE_RATE", 16000)
+                vad_token = self._resolve_vad_token()
+                try:
+                    vad_intervals = self._get_vad_intervals(
+                        waveform=audio,
+                        sample_rate=sample_rate,
+                        session_id=session_id,
+                        token=vad_token,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "VAD failed; falling back to full transcription",
+                        extra={
+                            "session_id": session_id,
+                            "operation": "whisperx_vad",
+                            "error": str(exc),
+                        },
+                    )
+                    vad_intervals = []
+
+                if vad_intervals:
+                    merged_segments = []
+                    detected_language = None
+                    for start_s, end_s in vad_intervals:
+                        chunk = self._slice_audio(audio, sample_rate, start_s, end_s)
+                        if chunk is None:
+                            continue
+                        chunk_result = self.model.transcribe(chunk, **transcribe_kwargs)
+                        chunk_segments = chunk_result.get("segments", [])
+                        self._offset_segments(chunk_segments, start_s)
+                        merged_segments.extend(chunk_segments)
+                        if detected_language is None:
+                            detected_language = chunk_result.get("language")
+
+                    merged_segments.sort(key=lambda seg: seg.get("start", 0.0))
+                    result = {
+                        "segments": merged_segments,
+                        "language": detected_language or language,
+                    }
+                else:
+                    logger.warning(
+                        "No VAD speech regions found; running full transcription",
+                        extra={
+                            "session_id": session_id,
+                            "operation": "whisperx_vad",
+                        },
+                    )
+                    result = self.model.transcribe(audio, **transcribe_kwargs)
+            else:
+                result = self.model.transcribe(audio, **transcribe_kwargs)
 
             # Cleanup
             gc.collect()
@@ -299,6 +357,115 @@ class WhisperXService:
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+    def _build_transcribe_kwargs(
+        self,
+        *,
+        language: str | None,
+        batch_size: int,
+        session_id: str,
+    ) -> Dict[str, Any]:
+        transcribe_kwargs = {"batch_size": batch_size}
+        try:
+            signature = inspect.signature(self.model.transcribe)
+            param_names = set(signature.parameters.keys())
+        except (TypeError, ValueError):
+            param_names = set()
+
+        if language is None:
+            logger.info(
+                "Transcription language set to auto-detect",
+                extra={
+                    "session_id": session_id,
+                    "operation": "whisperx_transcribe",
+                },
+            )
+            return transcribe_kwargs
+
+        if "language" in param_names or not param_names:
+            transcribe_kwargs["language"] = language
+            return transcribe_kwargs
+
+        logger.warning(
+            "Transcribe does not accept language parameter; omitting",
+            extra={
+                "session_id": session_id,
+                "operation": "whisperx_transcribe",
+                "language": language,
+            },
+        )
+        return transcribe_kwargs
+
+    def _get_vad_intervals(
+        self,
+        *,
+        waveform,
+        sample_rate: int,
+        session_id: str,
+        token: str | None,
+    ) -> list[tuple[float, float]]:
+        from pyannote.audio import Pipeline
+
+        pipeline = Pipeline.from_pretrained(
+            "pyannote/voice-activity-detection",
+            use_auth_token=token,
+        )
+        audio_tensor = torch.tensor(waveform).float().unsqueeze(0)
+        vad_result = pipeline({"waveform": audio_tensor, "sample_rate": sample_rate})
+        segments = []
+        for segment in vad_result.get_timeline().support():
+            segments.append((float(segment.start), float(segment.end)))
+        logger.info(
+            "VAD intervals detected",
+            extra={
+                "session_id": session_id,
+                "operation": "whisperx_vad",
+                "segments": len(segments),
+            },
+        )
+        return segments
+
+    def _resolve_vad_token(self) -> str | None:
+        try:
+            from services.settings_service import settings_manager
+
+            settings = settings_manager.load_settings()
+            token = settings.get("whisperx", {}).get("vad_token")
+            if token:
+                return token
+        except Exception:
+            pass
+
+        return os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
+
+    def _slice_audio(
+        self,
+        waveform,
+        sample_rate: int,
+        start_s: float,
+        end_s: float,
+    ):
+        if start_s >= end_s:
+            return None
+        start_idx = max(0, int(start_s * sample_rate))
+        end_idx = max(start_idx, int(end_s * sample_rate))
+        try:
+            return waveform[start_idx:end_idx]
+        except Exception:
+            return None
+
+    def _offset_segments(self, segments: list[dict], offset_s: float) -> None:
+        for seg in segments:
+            if "start" in seg and seg["start"] is not None:
+                seg["start"] = float(seg["start"]) + offset_s
+            if "end" in seg and seg["end"] is not None:
+                seg["end"] = float(seg["end"]) + offset_s
+            if "words" in seg and isinstance(seg["words"], list):
+                for word in seg["words"]:
+                    if "start" in word and word["start"] is not None:
+                        word["start"] = float(word["start"]) + offset_s
+                    if "end" in word and word["end"] is not None:
+                        word["end"] = float(word["end"]) + offset_s
 
 
 # Singleton accessor

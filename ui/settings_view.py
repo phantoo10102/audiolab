@@ -68,6 +68,17 @@ def render_settings_view():
                 "the default data/models/whisperx folder."
             ),
         )
+        current_settings["whisperx"]["vad_enabled"] = st.checkbox(
+            "Enable VAD",
+            value=current_settings["whisperx"].get("vad_enabled", False),
+            help="Toggle voice activity detection for WhisperX.",
+        )
+        current_settings["whisperx"]["vad_token"] = st.text_input(
+            "VAD token",
+            value=current_settings["whisperx"].get("vad_token", ""),
+            type="password",
+            help="Hugging Face token used to download pyannote VAD pipeline (gated).",
+        )
 
         # VAD Settings
         st.markdown("**Voice Activity Detection (VAD)**")
