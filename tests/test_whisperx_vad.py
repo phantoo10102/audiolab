@@ -11,7 +11,7 @@ sys.modules.setdefault("torch", torch_stub)
 whisperx_stub = types.ModuleType("whisperx")
 whisperx_stub.load_model = lambda *args, **kwargs: "model"
 whisperx_stub.load_audio = lambda *args, **kwargs: b"audio"
-sys.modules.setdefault("whisperx", whisperx_stub)
+sys.modules["whisperx"] = whisperx_stub
 sys.modules.setdefault("numpy", types.ModuleType("numpy"))
 
 pydub_stub = types.ModuleType("pydub")
@@ -40,6 +40,7 @@ sys.modules.setdefault("streamlit.runtime.scriptrunner", scriptrunner_stub)
 import importlib
 
 whisperx_actions = importlib.import_module("actions.whisperx_actions")
+whisperx_service_module = importlib.import_module("services.whisperx_service")
 
 
 class _AudioState:
@@ -96,6 +97,83 @@ class TestWhisperXVad(unittest.TestCase):
 
         _, kwargs = job_runner.submit.call_args
         self.assertFalse(kwargs["vad_enabled"])
+
+
+class _ModelNoVad:
+    def __init__(self):
+        self.last_language = None
+
+    def transcribe(self, audio, batch_size=16, language=None):
+        self.last_language = language
+        return {"segments": [], "language": language}
+
+
+class _ModelWithVad:
+    def __init__(self):
+        self.last_language = None
+        self.last_vad = None
+
+    def transcribe(self, audio, batch_size=16, language=None, vad_filter=False):
+        self.last_language = language
+        self.last_vad = vad_filter
+        return {"segments": [], "language": language}
+
+
+class TestWhisperXTranscribeCompat(unittest.TestCase):
+    def test_transcribe_omits_vad_when_unsupported(self):
+        service = whisperx_service_module.WhisperXService()
+        service.model = _ModelNoVad()
+        with patch.object(
+            whisperx_service_module.whisperx,
+            "load_audio",
+            return_value=b"audio",
+            create=True,
+        ):
+            result = service.transcribe(
+                audio_path="audio.wav",
+                language="zh",
+                batch_size=4,
+                vad_filter=True,
+            )
+        self.assertTrue(result["success"])
+        self.assertEqual(service.model.last_language, "zh")
+
+    def test_transcribe_passes_vad_when_supported(self):
+        service = whisperx_service_module.WhisperXService()
+        service.model = _ModelWithVad()
+        with patch.object(
+            whisperx_service_module.whisperx,
+            "load_audio",
+            return_value=b"audio",
+            create=True,
+        ):
+            result = service.transcribe(
+                audio_path="audio.wav",
+                language="zh",
+                batch_size=4,
+                vad_filter=True,
+            )
+        self.assertTrue(result["success"])
+        self.assertEqual(service.model.last_language, "zh")
+        self.assertTrue(service.model.last_vad)
+
+    def test_transcribe_auto_language_omits_language(self):
+        service = whisperx_service_module.WhisperXService()
+        service.model = _ModelNoVad()
+        with patch.object(
+            whisperx_service_module.whisperx,
+            "load_audio",
+            return_value=b"audio",
+            create=True,
+        ):
+            result = service.transcribe(
+                audio_path="audio.wav",
+                language=None,
+                batch_size=4,
+                vad_filter=False,
+            )
+        self.assertTrue(result["success"])
+        self.assertIsNone(service.model.last_language)
 
 
 if __name__ == "__main__":

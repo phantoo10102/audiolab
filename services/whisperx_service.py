@@ -1,5 +1,6 @@
 # ===== FILE: services/whisperx_service.py =====
 import gc
+import inspect
 import logging
 import time
 from pathlib import Path
@@ -224,7 +225,7 @@ class WhisperXService:
     def transcribe(
         self,
         audio_path: str,
-        language: str = "en",
+        language: str | None = "en",
         batch_size: int = 16,
         vad_filter: bool | None = None,
     ) -> Dict[str, Any]:
@@ -238,13 +239,14 @@ class WhisperXService:
             return {"success": False, "message": "Model not loaded"}
 
         try:
+            language_label = language or "auto"
             logger.info(
                 "Transcription started",
                 extra={
                     "session_id": session_id,
                     "operation": "whisperx_transcribe",
                     "input_file": Path(audio_path).name,
-                    "language": language,
+                    "language": language_label,
                     "batch_size": batch_size,
                 },
             )
@@ -252,13 +254,46 @@ class WhisperXService:
             # Load audio
             audio = whisperx.load_audio(audio_path)
 
+            transcribe_kwargs = {"batch_size": batch_size}
+            try:
+                signature = inspect.signature(self.model.transcribe)
+                param_names = set(signature.parameters.keys())
+            except (TypeError, ValueError):
+                param_names = set()
+
+            if language is not None:
+                if "language" in param_names or not param_names:
+                    transcribe_kwargs["language"] = language
+                else:
+                    logger.warning(
+                        "Transcribe does not accept language parameter; omitting",
+                        extra={
+                            "session_id": session_id,
+                            "operation": "whisperx_transcribe",
+                            "language": language,
+                        },
+                    )
+
+            vad_param = None
+            if vad_filter is not None:
+                if "vad_filter" in param_names:
+                    vad_param = "vad_filter"
+                elif "vad" in param_names:
+                    vad_param = "vad"
+
+            if vad_param:
+                transcribe_kwargs[vad_param] = vad_filter
+            elif vad_filter:
+                logger.warning(
+                    "Transcribe does not support VAD parameters; running without VAD",
+                    extra={
+                        "session_id": session_id,
+                        "operation": "whisperx_transcribe",
+                    },
+                )
+
             # Transcribe
-            result = self.model.transcribe(
-                audio,
-                batch_size=batch_size,
-                language=language,
-                **({"vad_filter": vad_filter} if vad_filter is not None else {}),
-            )
+            result = self.model.transcribe(audio, **transcribe_kwargs)
 
             # Cleanup
             gc.collect()
