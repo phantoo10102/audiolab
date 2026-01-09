@@ -1,3 +1,4 @@
+import logging
 import threading
 import socket
 import http.server
@@ -13,6 +14,7 @@ _SERVER_INSTANCE = None
 _SERVER_PORT = None
 _SERVER_THREAD = None
 _SERVING_DIR = None
+logger = logging.getLogger(__name__)
 
 
 class AudioHandler(http.server.SimpleHTTPRequestHandler):
@@ -56,7 +58,14 @@ def start_audio_server():
     _SERVER_THREAD.daemon = True
     _SERVER_THREAD.start()
 
-    print(f"🚀 Audio Server started: http://localhost:{_SERVER_PORT} -> {_SERVING_DIR}")
+    logger.info(
+        "Audio Server started",
+        extra={
+            "operation": "audio_server_start",
+            "port": _SERVER_PORT,
+            "serving_dir": _SERVING_DIR,
+        },
+    )
     return f"http://localhost:{_SERVER_PORT}"
 
 

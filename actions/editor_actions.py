@@ -1,9 +1,8 @@
 import streamlit as st
 import os
 import shutil
-import time
 from pathlib import Path
-from pydub import AudioSegment, silence, effects
+from pydub import AudioSegment, silence
 
 # Imports
 from jobs import job_runner
@@ -12,15 +11,6 @@ from state.session_manager import get_manager
 from services.link_import_service import LinkImportService
 from utils.constants import DATA_OUTPUT_DIR
 from utils.logging_config import get_session_id
-
-
-def get_session():
-    if "session" not in st.session_state:
-        # Import lazy để tránh circular import nếu cần
-        from state.session_manager import SessionManager
-
-        st.session_state["session"] = SessionManager()
-    return st.session_state["session"]
 
 
 # Helper getter để tránh truyền state quá nhiều
@@ -127,7 +117,6 @@ def denoise_audio_callback():
     Callback xử lý khi bấm nút Denoise.
     Thực hiện: Snapshot History -> Gửi Job chạy nền -> Rerun UI để hiển thị trạng thái 'Running'.
     """
-    from jobs import job_runner
     from services.denoise_service import DenoiseService
 
     manager, state, processor = get_state_objects()
@@ -146,8 +135,6 @@ def denoise_audio_callback():
     )
 
     # 3. Lazy Import: Chỉ load thư viện xử lý nặng khi thực sự cần dùng
-    from services.denoise_service import DenoiseService
-
     # 4. Submit Job: Gửi tác vụ vào ThreadPool (Chạy nền)
     # Lưu ý: Truyền hàm và tham số, KHÔNG gọi hàm () ngay lập tức
     job_id = job_runner.submit(

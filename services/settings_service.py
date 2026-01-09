@@ -2,15 +2,13 @@ import os
 import yaml
 import logging
 from pathlib import Path
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple
 from cryptography.fernet import Fernet
 from huggingface_hub import whoami
-from utils.logging_config import get_session_id
 from utils.constants import DATA_MODELS_DIR
 
 logger = logging.getLogger(__name__)
 # Constants
-ROOT_DIR = Path(__file__).parent.parent
 ROOT_DIR = Path(__file__).parent.parent
 CONFIG_FILE = ROOT_DIR / "config.yaml"
 USER_SETTINGS_FILE = ROOT_DIR / "data" / "config" / "user_settings.yaml"
@@ -39,9 +37,6 @@ DEFAULT_SETTINGS = {
     },
     "experimental": {"enable_beta_features": False},
 }
-
-logger = logging.getLogger(__name__)
-
 
 class SettingsManager:
     _key: bytes = None
