@@ -282,9 +282,15 @@ def render_editor_view(manager):
                 default_label = model_map.get(default_model_code, "small")
                 model_options = ["Tiny", "base", "small", "medium", "large", "Turbo V3"]
 
-                # Layout: 4 Settings + 1 Run Button
-                c_lang, c_model, c_export, c_align, c_btnRun = st.columns(
-                    [0.2, 0.2, 0.2, 0.2, 0.2],
+                vad_default = user_settings.get("whisperx", {}).get(
+                    "vad_enabled", False
+                )
+                if "whisperx_vad" not in st.session_state:
+                    st.session_state["whisperx_vad"] = "ON" if vad_default else "OFF"
+
+                # Layout: 5 Settings + 1 Run Button
+                c_lang, c_model, c_export, c_align, c_vad, c_btnRun = st.columns(
+                    [0.18, 0.18, 0.18, 0.18, 0.12, 0.16],
                     vertical_alignment="bottom",
                 )
 
@@ -333,6 +339,13 @@ def render_editor_view(manager):
                         key="whisperx_alignment",
                         disabled=is_processing,
                     )
+                with c_vad:
+                    st.selectbox(
+                        "VAD",
+                        ["OFF", "ON"],
+                        key="whisperx_vad",
+                        disabled=is_processing,
+                    )
                 with c_btnRun:
                     st.button(
                         "🚀 Run Whisk",
@@ -363,7 +376,8 @@ def render_editor_view(manager):
                             from utils.srt_formatter import segments_to_srt
 
                             preview_value = segments_to_srt(
-                                result.get("segments", [])
+                                result.get("segments", []),
+                                lang=result.get("language"),
                             )
                         except Exception:
                             preview_value = result.get("full_text", "")

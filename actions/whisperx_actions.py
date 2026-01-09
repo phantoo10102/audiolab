@@ -27,6 +27,7 @@ def _run_whisperx_task(
     export_format: str = "Text",
     alignment_level: str = "Đoạn", 
     models_dir: str | None = None, 
+    vad_enabled: bool = False,
 ) -> Dict[str, Any]:
     """
     Hàm thực thi logic nặng của WhisperX.
@@ -34,10 +35,20 @@ def _run_whisperx_task(
     """
     pipeline_start = time.time()
 
+    resolved_models_dir = whisperx_service._resolve_models_dir(models_dir, session_id)
+    logger.info(
+        "Using WhisperX models_dir",
+        extra={
+            "session_id": session_id,
+            "operation": "whisperx_models_dir",
+            "models_dir": str(resolved_models_dir),
+        },
+    )
+
     # 1. Load Model
     load_res = whisperx_service.load_model(
         model_name=model_name,
-        models_dir=models_dir,
+        models_dir=resolved_models_dir,
     )
     if not load_res["success"]:
         raise RuntimeError(f"Load Model Failed: {load_res['message']}")
@@ -47,7 +58,10 @@ def _run_whisperx_task(
 
     normalized_language = normalize_whisper_language(language)
     trans_res = whisperx_service.transcribe(
-        audio_path=input_path, language=normalized_language, batch_size=batch_size
+        audio_path=input_path,
+        language=normalized_language,
+        batch_size=batch_size,
+        vad_filter=vad_enabled,
     )
     if not trans_res["success"]:
         raise RuntimeError(f"Transcription Failed: {trans_res['message']}")
@@ -81,7 +95,7 @@ def _run_whisperx_task(
         if safe_format == "srt":
             from utils.srt_formatter import segments_to_srt
 
-            srt_text = segments_to_srt(aligned_segments)
+            srt_text = segments_to_srt(aligned_segments, lang=normalized_language)
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(srt_text)
         elif safe_format == "json":
@@ -161,6 +175,7 @@ def run_whisperx_callback():
     alignment_level = st.session_state.get("whisperx_alignment", "Đoạn") 
     settings = st.session_state.get("user_settings", {})
     models_dir = settings.get("whisperx", {}).get("models_dir") 
+    vad_enabled = st.session_state.get("whisperx_vad", "OFF") == "ON"
 
     # 3. Submit Job
     job_id = job_runner.submit(
@@ -173,6 +188,7 @@ def run_whisperx_callback():
         export_format=export_format,
         alignment_level=alignment_level, 
         models_dir=models_dir, 
+        vad_enabled=vad_enabled,
     )
 
     # 4. Update UI State

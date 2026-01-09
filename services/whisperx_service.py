@@ -222,7 +222,11 @@ class WhisperXService:
             return default_dir
 
     def transcribe(
-        self, audio_path: str, language: str = "en", batch_size: int = 16
+        self,
+        audio_path: str,
+        language: str = "en",
+        batch_size: int = 16,
+        vad_filter: bool | None = None,
     ) -> Dict[str, Any]:
         """
         Runs transcription with structured logging.
@@ -250,7 +254,10 @@ class WhisperXService:
 
             # Transcribe
             result = self.model.transcribe(
-                audio, batch_size=batch_size, language=language
+                audio,
+                batch_size=batch_size,
+                language=language,
+                **({"vad_filter": vad_filter} if vad_filter is not None else {}),
             )
 
             # Cleanup

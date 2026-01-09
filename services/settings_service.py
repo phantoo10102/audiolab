@@ -32,7 +32,10 @@ DEFAULT_SETTINGS = {
         "min_speakers": 1,
         "max_speakers": 5,
     },
-    "whisperx": {"models_dir": str(DATA_MODELS_DIR / "whisperx")},
+    "whisperx": {
+        "models_dir": str(DATA_MODELS_DIR / "whisperx"),
+        "vad_enabled": False,
+    },
     "experimental": {"enable_beta_features": False},
 }
 
