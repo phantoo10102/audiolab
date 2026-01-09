@@ -34,10 +34,20 @@ def _run_whisperx_task(
     """
     pipeline_start = time.time()
 
+    resolved_models_dir = whisperx_service._resolve_models_dir(models_dir, session_id)
+    logger.info(
+        "Using WhisperX models_dir",
+        extra={
+            "session_id": session_id,
+            "operation": "whisperx_models_dir",
+            "models_dir": str(resolved_models_dir),
+        },
+    )
+
     # 1. Load Model
     load_res = whisperx_service.load_model(
         model_name=model_name,
-        models_dir=models_dir,
+        models_dir=resolved_models_dir,
     )
     if not load_res["success"]:
         raise RuntimeError(f"Load Model Failed: {load_res['message']}")
@@ -81,7 +91,7 @@ def _run_whisperx_task(
         if safe_format == "srt":
             from utils.srt_formatter import segments_to_srt
 
-            srt_text = segments_to_srt(aligned_segments)
+            srt_text = segments_to_srt(aligned_segments, lang=normalized_language)
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(srt_text)
         elif safe_format == "json":

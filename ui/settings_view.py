@@ -1,5 +1,7 @@
 import streamlit as st
 
+from utils.constants import DATA_MODELS_DIR
+
 # [FIX] Import SettingsManager instead of settings_service
 from services.settings_service import settings_manager
 from state.session_manager import get_manager
@@ -34,6 +36,9 @@ def render_settings_view():
     with st.expander("🎙️ WhisperX Advanced", expanded=False):
         st.caption("These settings apply globally to all WhisperX runs.")
         current_settings.setdefault("whisperx", {})
+        default_models_dir = str(DATA_MODELS_DIR / "whisperx")
+        if not current_settings["whisperx"].get("models_dir"):
+            current_settings["whisperx"]["models_dir"] = default_models_dir
 
         # Device selection
         current_settings["models"]["device"] = st.selectbox(

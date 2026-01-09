@@ -119,6 +119,56 @@ class TestWhisperXModelsDir(unittest.TestCase):
                 self.assertEqual(result, "model")
                 load_model.assert_called_once()
 
+    def test_load_model_passes_models_dir(self):
+        with TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            service = WhisperXService()
+            service.model = None
+            service.model_name = None
+            service.device = None
+            service.compute_type = None
+            custom_dir = tmp_path / "custom_models"
+
+            with patch.object(
+                WhisperXService, "_model_exists", return_value=False
+            ) as model_exists, patch.object(
+                WhisperXService, "ensure_whisperx_model", return_value="model"
+            ) as ensure_model:
+                result = service.load_model(
+                    model_name="small",
+                    device="cpu",
+                    compute_type="int8",
+                    models_dir=custom_dir,
+                )
+
+            self.assertTrue(result["success"])
+            ensure_model.assert_called_once()
+            resolved_dir = ensure_model.call_args[0][0]
+            self.assertEqual(resolved_dir, custom_dir)
+            self.assertTrue(custom_dir.exists())
+            model_exists.assert_called_once()
+
+    def test_ensure_model_creates_dir_and_uses_cache(self):
+        with TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            service = WhisperXService()
+            model_dir = tmp_path / "missing_models"
+
+            with patch.object(
+                whisperx_stub, "load_model", return_value="model"
+            ) as load_model:
+                result = service.ensure_whisperx_model(
+                    model_dir, "small", device="cpu", compute_type="int8"
+                )
+                self.assertEqual(result, "model")
+                self.assertTrue(model_dir.exists())
+                load_model.assert_called_once_with(
+                    "small",
+                    device="cpu",
+                    compute_type="int8",
+                    download_root=str(model_dir),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
