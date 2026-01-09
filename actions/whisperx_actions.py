@@ -25,8 +25,8 @@ def _run_whisperx_task(
     batch_size: int,
     session_id: str,
     export_format: str = "Text",
-    alignment_level: str = "Đoạn",
-    models_dir: str | None = None,
+    alignment_level: str = "Đoạn", 
+    models_dir: str | None = None, 
     vad_enabled: bool = False,
 ) -> Dict[str, Any]:
     """
@@ -45,20 +45,18 @@ def _run_whisperx_task(
         },
     )
 
-    from utils.whisperx_languages import normalize_whisper_language
-
-    normalized_language = normalize_whisper_language(language)
-
     # 1. Load Model
     load_res = whisperx_service.load_model(
         model_name=model_name,
         models_dir=resolved_models_dir,
-        language=normalized_language,
     )
     if not load_res["success"]:
         raise RuntimeError(f"Load Model Failed: {load_res['message']}")
 
     # 2. Transcribe
+    from utils.whisperx_languages import normalize_whisper_language
+
+    normalized_language = normalize_whisper_language(language)
     trans_res = whisperx_service.transcribe(
         audio_path=input_path,
         language=normalized_language,

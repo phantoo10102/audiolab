@@ -47,7 +47,6 @@ class WhisperXService:
         device: str = "cuda",
         compute_type: str = "float16",
         models_dir: Optional[str | Path] = None,
-        language: str | None = None,
     ) -> Dict[str, Any]:
         """
         Loads the WhisperX model with reuse logic and structured logging.
@@ -108,11 +107,6 @@ class WhisperXService:
                 },
             )
 
-            load_kwargs = self._build_load_model_kwargs(
-                language=language,
-                session_id=session_id,
-            )
-
             if not model_available:
                 logger.info(
                     "Model not found locally; downloading",
@@ -128,7 +122,6 @@ class WhisperXService:
                     model_name,
                     device=device,
                     compute_type=compute_type,
-                    language=language,
                 )
             else:
                 logger.info(
@@ -148,7 +141,6 @@ class WhisperXService:
                     device=device,
                     compute_type=compute_type,
                     download_root=str(resolved_models_dir),
-                    **load_kwargs,
                 )
 
             self.model_name = model_name
@@ -193,21 +185,15 @@ class WhisperXService:
         model_name: str,
         device: str,
         compute_type: str,
-        language: str | None,
     ) -> Optional[Any]:
         models_dir.mkdir(parents=True, exist_ok=True)
         if self._model_exists(models_dir, model_name):
             return None
-        load_kwargs = self._build_load_model_kwargs(
-            language=language,
-            session_id=get_session_id(),
-        )
         return whisperx.load_model(
             model_name,
             device=device,
             compute_type=compute_type,
             download_root=str(models_dir),
-            **load_kwargs,
         )
 
     def _resolve_models_dir(
@@ -409,33 +395,6 @@ class WhisperXService:
             },
         )
         return transcribe_kwargs
-
-    def _build_load_model_kwargs(
-        self,
-        *,
-        language: str | None,
-        session_id: str,
-    ) -> Dict[str, Any]:
-        if language is None:
-            return {}
-        try:
-            signature = inspect.signature(whisperx.load_model)
-            param_names = set(signature.parameters.keys())
-        except (TypeError, ValueError):
-            param_names = set()
-
-        if "language" in param_names or not param_names:
-            return {"language": language}
-
-        logger.warning(
-            "Load model does not accept language parameter; omitting",
-            extra={
-                "session_id": session_id,
-                "operation": "whisperx_load_model",
-                "language": language,
-            },
-        )
-        return {}
 
     def _get_vad_intervals(
         self,
