@@ -1,16 +1,16 @@
 import json
 import logging
 import os
-import sys 
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from utils.constants import PROJECT_ROOT 
-from datetime import datetime 
+from utils.constants import PROJECT_ROOT
 
 
 LOG_ROOT_DIR = PROJECT_ROOT / "data" / "log"
+APP_LOGGER_PREFIXES = ("services", "utils", "components", "app")
 
 
 @dataclass(frozen=True)
@@ -117,14 +117,15 @@ class ConsoleFormatter(logging.Formatter):
 
 
 class JsonLinesFileHandler(logging.Handler):
-    def __init__(self, log_root: Path):
+    def __init__(self, log_root: Path, filename: str = "app.jsonl"):
         super().__init__()
         self.log_root = log_root
+        self.filename = filename
 
     def emit(self, record):
         try:
             log_dir = self._ensure_log_dir()
-            log_path = log_dir / "app.jsonl"
+            log_path = log_dir / self.filename
             message = self.format(record)
             with open(log_path, "a", encoding="utf-8") as log_file:
                 log_file.write(message + "\n")
@@ -136,6 +137,24 @@ class JsonLinesFileHandler(logging.Handler):
         log_dir = self.log_root / date_str
         log_dir.mkdir(parents=True, exist_ok=True)
         return log_dir
+
+
+class SuppressWarningsFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno != logging.WARNING
+
+
+class WarningFilter(logging.Filter):
+    def __init__(self, *, external: bool):
+        super().__init__()
+        self.external = external
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno != logging.WARNING:
+            return False
+        logger_name = record.name or ""
+        is_internal = logger_name.startswith(APP_LOGGER_PREFIXES) or logger_name == "root"
+        return (not is_internal) if self.external else is_internal
 
 
 def get_session_id():
@@ -159,16 +178,31 @@ def setup_logging(level=logging.INFO):
 
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(ConsoleFormatter())
+    console_handler.addFilter(SuppressWarningsFilter())
 
     file_handler = JsonLinesFileHandler(LOG_ROOT_DIR)
     file_handler.setFormatter(JsonLinesFormatter())
+
+    warning_handler = JsonLinesFileHandler(LOG_ROOT_DIR, filename="warnings.jsonl")
+    warning_handler.setFormatter(JsonLinesFormatter())
+    warning_handler.addFilter(WarningFilter(external=False))
+
+    external_warning_handler = JsonLinesFileHandler(
+        LOG_ROOT_DIR,
+        filename="external_warnings.jsonl",
+    )
+    external_warning_handler.setFormatter(JsonLinesFormatter())
+    external_warning_handler.addFilter(WarningFilter(external=True))
 
     # Config root logger
     root.setLevel(level)
     root.addHandler(console_handler)
     root.addHandler(file_handler)
+    root.addHandler(warning_handler)
+    root.addHandler(external_warning_handler)
 
     # Giảm bớt log ồn ào từ thư viện bên thứ 3
     logging.getLogger("PIL").setLevel(logging.WARNING)
     logging.getLogger("streamlit").setLevel(logging.WARNING)
     logging.getLogger("pydub").setLevel(logging.WARNING)
+    logging.captureWarnings(True)
