@@ -1,7 +1,11 @@
+import logging
 import streamlit as st
 import streamlit.components.v1 as components
 import os
 from functools import lru_cache
+
+logger = logging.getLogger(__name__)
+
 
 try:
     from infra.local_audio_server import get_audio_url
@@ -62,5 +66,8 @@ def audio_waveform(
         return component_value
 
     except Exception as e:
-        print(f"❌ Error in audio_waveform component: {str(e)}")
+        logger.exception(
+            "Error in audio_waveform component",
+            extra={"error": str(e), "operation": "audio_waveform"},
+        )
         return None

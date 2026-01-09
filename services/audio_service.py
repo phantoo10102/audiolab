@@ -1,9 +1,7 @@
 # Code giữ nguyên 100%, chỉ đổi tên class file nếu cần, ở đây giữ nguyên content
 
-import numpy as np
 import logging
 
-from io import BytesIO
 from pydub import AudioSegment
 from pathlib import Path
 from utils.logging_config import get_session_id
@@ -162,7 +160,16 @@ class AudioProcessor:
                 info["bitrate"] = "256k"
             else:
                 info["bitrate"] = "320k"
-        except:
+        except Exception as e:
+            logger.warning(
+                "Failed to compute bitrate",
+                extra={
+                    "session_id": get_session_id(),
+                    "operation": "get_audio_info",
+                    "error": str(e),
+                },
+                exc_info=True,
+            )
             info["bitrate"] = "192k"
         return info
 
