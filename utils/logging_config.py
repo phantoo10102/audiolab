@@ -1,12 +1,13 @@
 import json
 import logging
 import os
-import sys
+import sys 
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from utils.constants import PROJECT_ROOT
+from utils.constants import PROJECT_ROOT 
+from datetime import datetime 
 
 
 LOG_ROOT_DIR = PROJECT_ROOT / "data" / "log"
