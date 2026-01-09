@@ -4,8 +4,10 @@ import streamlit as st
 
 # Setup Logging & Path
 from utils.logging_config import setup_logging
+from utils.warnings_config import configure_warnings
 
 setup_logging(level="INFO")
+configure_warnings()
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:

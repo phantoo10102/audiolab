@@ -11,6 +11,7 @@ from datetime import datetime
 
 
 LOG_ROOT_DIR = PROJECT_ROOT / "data" / "log"
+JSONL_LOGGER_NAME = "jsonl"
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,15 @@ class JsonLinesFormatter(logging.Formatter):
             "logger": record.name,
             "message": _redact_sensitive(record.getMessage()),
         }
+
+        if hasattr(record, "warning_category"):
+            log_data["warning"] = {
+                "category": record.warning_category,
+                "filename": _safe_str(getattr(record, "warning_filename", "")),
+                "lineno": getattr(record, "warning_lineno", 0),
+                "module": _safe_str(getattr(record, "warning_module", "")),
+                "message": _redact_sensitive(_safe_str(getattr(record, "warning_message", ""))),
+            }
 
         if hasattr(record, "session_id"):
             log_data["session_id"] = record.session_id
@@ -167,6 +177,11 @@ def setup_logging(level=logging.INFO):
     root.setLevel(level)
     root.addHandler(console_handler)
     root.addHandler(file_handler)
+
+    jsonl_logger = logging.getLogger(JSONL_LOGGER_NAME)
+    jsonl_logger.setLevel(level)
+    jsonl_logger.propagate = False
+    jsonl_logger.handlers = [file_handler]
 
     # Giảm bớt log ồn ào từ thư viện bên thứ 3
     logging.getLogger("PIL").setLevel(logging.WARNING)
