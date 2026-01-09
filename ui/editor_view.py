@@ -1,6 +1,5 @@
+import logging
 import streamlit as st
-import os
-import time
 from pathlib import Path
 
 # Imports
@@ -11,15 +10,10 @@ from actions import separation_actions
 
 # [UPDATED IMPORTS] Import check_whisperx_job
 from actions.whisperx_actions import run_whisperx_callback, check_whisperx_job
-from actions.editor_actions import check_import_job
 from ui.waveform_view import render_waveform
 from utils.config_loader import config
 
-# Fallback import server
-try:
-    from infra.local_audio_server import get_audio_url
-except ImportError:
-    get_audio_url = lambda x: x
+logger = logging.getLogger(__name__)
 
 
 # [FIX BUG-011] Fragment polling: Tự động refresh mỗi 2s để check job
@@ -134,7 +128,12 @@ def render_editor_view(manager):
                 st.divider()
                 try:
                     audio_info = st.session_state.processor.get_audio_info() or {}
-                except:
+                except Exception as e:
+                    logger.warning(
+                        "Failed to read audio info",
+                        extra={"error": str(e), "operation": "audio_info"},
+                        exc_info=True,
+                    )
                     audio_info = {}
 
                 c1, c2, c3, c4 = st.columns(4)

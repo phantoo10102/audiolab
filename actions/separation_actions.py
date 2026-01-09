@@ -7,7 +7,8 @@ from state.session_manager import get_manager
 
 
 def get_state_objects():
-    return get_manager(), get_manager().state
+    manager = get_manager()
+    return manager, manager.state
 
 
 # --- CALLBACKS ---

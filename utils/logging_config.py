@@ -1,9 +1,7 @@
 import logging
 import json
 import sys
-import time
 from datetime import datetime
-import streamlit as st
 
 
 class StructuredFormatter(logging.Formatter):
