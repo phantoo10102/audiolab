@@ -12,3 +12,4 @@ __pycache__/
 
 # Runtime outputs (only if safe to ignore)
 data/
+data/log/

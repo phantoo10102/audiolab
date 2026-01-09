@@ -1,13 +1,62 @@
-import logging
 import json
-import sys
+import logging
+import os
+import sys 
+from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
+
+from utils.constants import PROJECT_ROOT 
+from datetime import datetime 
 
 
-class StructuredFormatter(logging.Formatter):
+LOG_ROOT_DIR = PROJECT_ROOT / "data" / "log"
+
+
+@dataclass(frozen=True)
+class ColorRule:
+    color: str
+    keywords: tuple[str, ...]
+
+
+COLOR_RESET = "\x1b[0m"
+COLOR_RED = "\x1b[31m"
+COLOR_YELLOW = "\x1b[33m"
+COLOR_GREEN = "\x1b[32m"
+COLOR_LIGHT_BLUE = "\x1b[94m"
+
+COMPLETION_RULE = ColorRule(
+    color=COLOR_GREEN,
+    keywords=("completed", "success", "exported", "done", "finished"),
+)
+RUNNING_RULE = ColorRule(
+    color=COLOR_LIGHT_BLUE,
+    keywords=("started", "loading", "downloading", "running", "submitted", "computing", "processing"),
+)
+
+
+def _colors_enabled() -> bool:
+    return not bool(os.environ.get("NO_COLOR"))
+
+
+def _safe_str(value) -> str:
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _redact_sensitive(value: str) -> str:
+    if not value:
+        return value
+    lowered = value.lower()
+    if any(token in lowered for token in ("token", "hf_token", "huggingface")):
+        return "[REDACTED]"
+    return value
+
+
+class JsonLinesFormatter(logging.Formatter):
     """
-    Formatter xuất log dưới dạng JSON để dễ dàng parse và monitor.
-    Tự động thêm timestamp, log level, và context (session_id, operation).
+    JSONL formatter with structured fields for file logging.
     """
 
     def format(self, record):
@@ -15,10 +64,9 @@ class StructuredFormatter(logging.Formatter):
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": _redact_sensitive(record.getMessage()),
         }
 
-        # Thêm context fields nếu được truyền qua parameter 'extra'
         if hasattr(record, "session_id"):
             log_data["session_id"] = record.session_id
         if hasattr(record, "operation"):
@@ -26,13 +74,68 @@ class StructuredFormatter(logging.Formatter):
         if hasattr(record, "duration"):
             log_data["duration_s"] = round(record.duration, 3)
         if hasattr(record, "file_path"):
-            log_data["file_path"] = str(record.file_path)
+            log_data["file_path"] = _safe_str(record.file_path)
 
-        # Xử lý Exception info
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
 
-        return json.dumps(log_data)
+        return json.dumps(log_data, ensure_ascii=False)
+
+
+class ConsoleFormatter(logging.Formatter):
+    """
+    Compact console output with optional ANSI colors.
+    """
+
+    def format(self, record):
+        message = _redact_sensitive(record.getMessage())
+        level = record.levelname
+        prefix = f"{level}: "
+        line = f"{prefix}{message}"
+
+        if record.name and record.name != "root":
+            line = f"{prefix}{record.name} - {message}"
+
+        if not _colors_enabled():
+            return line
+
+        color = ""
+        if record.levelno >= logging.ERROR:
+            color = COLOR_RED
+        elif record.levelno == logging.WARNING:
+            color = COLOR_YELLOW
+        elif record.levelno == logging.INFO:
+            lowered = message.lower()
+            if any(word in lowered for word in COMPLETION_RULE.keywords):
+                color = COMPLETION_RULE.color
+            elif any(word in lowered for word in RUNNING_RULE.keywords):
+                color = RUNNING_RULE.color
+
+        if color:
+            return f"{color}{line}{COLOR_RESET}"
+        return line
+
+
+class JsonLinesFileHandler(logging.Handler):
+    def __init__(self, log_root: Path):
+        super().__init__()
+        self.log_root = log_root
+
+    def emit(self, record):
+        try:
+            log_dir = self._ensure_log_dir()
+            log_path = log_dir / "app.jsonl"
+            message = self.format(record)
+            with open(log_path, "a", encoding="utf-8") as log_file:
+                log_file.write(message + "\n")
+        except Exception:
+            self.handleError(record)
+
+    def _ensure_log_dir(self) -> Path:
+        date_str = datetime.utcnow().strftime("%Y-%m-%d")
+        log_dir = self.log_root / date_str
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return log_dir
 
 
 def get_session_id():
@@ -51,16 +154,19 @@ def setup_logging(level=logging.INFO):
     # Xóa handlers cũ để tránh duplicate
     root = logging.getLogger()
     if root.handlers:
-        for handler in root.handlers:
+        for handler in list(root.handlers):
             root.removeHandler(handler)
 
-    # Setup StreamHandler (console)
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(StructuredFormatter())
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(ConsoleFormatter())
+
+    file_handler = JsonLinesFileHandler(LOG_ROOT_DIR)
+    file_handler.setFormatter(JsonLinesFormatter())
 
     # Config root logger
     root.setLevel(level)
-    root.addHandler(handler)
+    root.addHandler(console_handler)
+    root.addHandler(file_handler)
 
     # Giảm bớt log ồn ào từ thư viện bên thứ 3
     logging.getLogger("PIL").setLevel(logging.WARNING)
