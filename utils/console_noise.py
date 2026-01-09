@@ -1,5 +1,3 @@
-import importlib
-import importlib.util
 import logging
 import warnings
 
@@ -26,11 +24,10 @@ def configure_console_noise() -> None:
         message=r"Module 'speechbrain\.pretrained' was deprecated, redirecting to 'speechbrain\.inference'.*",
     )
 
-    if importlib.util.find_spec("pyannote") is not None:
-        spec = importlib.util.find_spec("pyannote.audio.utils.reproducibility")
-        if spec is not None:
-            module = importlib.import_module("pyannote.audio.utils.reproducibility")
-            warnings.filterwarnings("ignore", category=module.ReproducibilityWarning)
+    warnings.filterwarnings(
+    "ignore",
+    message=r".*ReproducibilityWarning: TensorFloat-32 \(TF32\) has been disabled.*",
+)
 
     logging.getLogger("speechbrain.utils.checkpoints").setLevel(logging.WARNING)
     logging.getLogger("speechbrain").setLevel(logging.INFO)
