@@ -102,9 +102,11 @@ class TestWhisperXVad(unittest.TestCase):
 class _ModelNoVad:
     def __init__(self):
         self.last_language = None
+        self.calls = []
 
     def transcribe(self, audio, batch_size=16, language=None):
         self.last_language = language
+        self.calls.append({"audio": audio, "language": language})
         return {"segments": [], "language": language}
 
 
@@ -112,10 +114,12 @@ class _ModelWithVad:
     def __init__(self):
         self.last_language = None
         self.last_vad = None
+        self.calls = []
 
     def transcribe(self, audio, batch_size=16, language=None, vad_filter=False):
         self.last_language = language
         self.last_vad = vad_filter
+        self.calls.append({"audio": audio, "language": language})
         return {"segments": [], "language": language}
 
 
@@ -133,7 +137,7 @@ class TestWhisperXTranscribeCompat(unittest.TestCase):
                 audio_path="audio.wav",
                 language="zh",
                 batch_size=4,
-                vad_filter=True,
+                vad_filter=False,
             )
         self.assertTrue(result["success"])
         self.assertEqual(service.model.last_language, "zh")
@@ -151,11 +155,11 @@ class TestWhisperXTranscribeCompat(unittest.TestCase):
                 audio_path="audio.wav",
                 language="zh",
                 batch_size=4,
-                vad_filter=True,
+                vad_filter=False,
             )
         self.assertTrue(result["success"])
         self.assertEqual(service.model.last_language, "zh")
-        self.assertTrue(service.model.last_vad)
+        self.assertFalse(service.model.last_vad)
 
     def test_transcribe_auto_language_omits_language(self):
         service = whisperx_service_module.WhisperXService()
@@ -174,6 +178,62 @@ class TestWhisperXTranscribeCompat(unittest.TestCase):
             )
         self.assertTrue(result["success"])
         self.assertIsNone(service.model.last_language)
+
+    def test_vad_intervals_offset_segments(self):
+        service = whisperx_service_module.WhisperXService()
+        service.model = _ModelNoVad()
+        intervals = [(0.0, 1.0), (2.0, 3.0)]
+        segments = [{"start": 0.1, "end": 0.9, "text": "hi"}]
+
+        def _fake_transcribe(audio, batch_size=16, language=None):
+            return {"segments": [seg.copy() for seg in segments], "language": language}
+
+        service.model.transcribe = _fake_transcribe
+
+        with patch.object(
+            whisperx_service_module.whisperx,
+            "load_audio",
+            return_value=[0.0] * 16000 * 4,
+            create=True,
+        ), patch.object(
+            whisperx_service_module.WhisperXService,
+            "_get_vad_intervals",
+            return_value=intervals,
+        ):
+            result = service.transcribe(
+                audio_path="audio.wav",
+                language="zh",
+                batch_size=4,
+                vad_filter=True,
+            )
+
+        self.assertEqual(len(result["segments"]), 2)
+        self.assertAlmostEqual(result["segments"][0]["start"], 0.1)
+        self.assertAlmostEqual(result["segments"][1]["start"], 2.1)
+
+    def test_vad_fallback_on_exception(self):
+        service = whisperx_service_module.WhisperXService()
+        service.model = _ModelNoVad()
+
+        with patch.object(
+            whisperx_service_module.whisperx,
+            "load_audio",
+            return_value=[0.0] * 16000,
+            create=True,
+        ), patch.object(
+            whisperx_service_module.WhisperXService,
+            "_get_vad_intervals",
+            side_effect=RuntimeError("VAD error"),
+        ):
+            result = service.transcribe(
+                audio_path="audio.wav",
+                language="en",
+                batch_size=4,
+                vad_filter=True,
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(len(service.model.calls), 1)
 
 
 if __name__ == "__main__":
