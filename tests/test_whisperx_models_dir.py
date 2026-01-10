@@ -118,7 +118,6 @@ class TestWhisperXModelsDir(unittest.TestCase):
                     "small",
                     device="cpu",
                     compute_type="int8",
-                    language=None,
                 )
                 self.assertIsNone(result)
                 load_model.assert_not_called()
@@ -133,7 +132,6 @@ class TestWhisperXModelsDir(unittest.TestCase):
                     "medium",
                     device="cpu",
                     compute_type="int8",
-                    language=None,
                 )
                 self.assertEqual(result, "model")
                 load_model.assert_called_once()
@@ -183,7 +181,6 @@ class TestWhisperXModelsDir(unittest.TestCase):
                     "small",
                     device="cpu",
                     compute_type="int8",
-                    language=None,
                 )
                 self.assertEqual(result, "model")
                 self.assertTrue(model_dir.exists())
