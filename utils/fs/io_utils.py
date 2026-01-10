@@ -22,7 +22,83 @@ logger = logging.getLogger(__name__)
 MAX_HISTORY_STEPS = config.get("system.history.max_steps", 10)
 
 
+<<<<<<< HEAD:utils/fs/io_utils.py
 def cleanup_old_history(history_list) -> None:
+=======
+def resolve_output_path(config_path, default_subdir):
+    """
+    Resolve output directory from config path, falling back to DATA_OUTPUT_DIR.
+    """
+    base_dir = Path(config_path) if config_path else DATA_OUTPUT_DIR
+    if default_subdir:
+        base_dir = base_dir / default_subdir
+    base_dir.mkdir(parents=True, exist_ok=True)
+    return base_dir
+
+
+def get_unique_history_path(original_name: str) -> Path:
+    """
+    Tạo đường dẫn unique cho history file, bảo toàn extension gốc.
+    [FIX BUG #9] Security: Fail-fast path traversal check.
+    """
+    timestamp = int(time.time() * 1000)
+
+    # --- STEP 1: Extract basename only ---
+    safe_basename = Path(original_name).name
+
+    # --- STEP 2: Validate dangerous patterns ---
+    # Defense in depth: Check ký tự nguy hiểm
+    DANGEROUS_PATTERNS = [
+        "\0",  # Null byte injection
+        "../",  # Unix path traversal
+        "..\\",  # Windows path traversal
+        ":",  # Windows drive letter
+        "<",
+        ">",
+        "|",
+        "*",
+        "?",  # Invalid filename chars
+    ]
+
+    # --- STEP 3: FAIL-FAST instead of silent fallback ---
+    for pattern in DANGEROUS_PATTERNS:
+        if pattern in safe_basename:
+            # Log security event
+            logger.warning(
+                "Path traversal/injection attempt blocked",
+                extra={
+                    "original_name": original_name,
+                    "safe_basename": safe_basename,
+                    "detected_pattern": pattern,
+                    "operation": "history_path",
+                    "session_id": get_session_id(),
+                },
+            )
+            # RAISE ERROR để UI bắt và hiển thị
+            raise ValueError(
+                f"Invalid filename: '{original_name}'. "
+                f"Filename contains forbidden character: '{pattern}'"
+            )
+
+    # --- STEP 4: Continue normal processing ---
+    original_path_obj = Path(safe_basename)
+    stem = original_path_obj.stem
+    ext = original_path_obj.suffix
+
+    if not ext:
+        ext = ".mp3"
+
+    # Làm sạch tên file (chỉ giữ ký tự an toàn cho filesystem)
+    clean_stem = "".join(
+        c for c in stem if c.isalnum() or c in (" ", "-", "_")
+    ).rstrip()
+
+    filename = f"hist_{timestamp}_{clean_stem}{ext}"
+    return TEMP_HISTORY_DIR / filename
+
+
+def cleanup_old_history(history_list):
+>>>>>>> origin/main:utils/file_manager.py
     """
     Xóa các file history không còn nằm trong danh sách undo stack.
     Được gọi định kỳ từ SessionManager (mỗi 10 lần push).

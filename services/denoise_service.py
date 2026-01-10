@@ -4,7 +4,11 @@ import time
 import numpy as np
 from pathlib import Path
 from pydub import AudioSegment
+<<<<<<< HEAD
 from utils.fs.path_utils import resolve_output_path
+=======
+from utils.file_manager import resolve_output_path
+>>>>>>> origin/main
 from utils.logging_config import get_session_id
 from utils.config_loader import config
 
