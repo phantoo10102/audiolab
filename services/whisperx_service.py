@@ -185,16 +185,30 @@ class WhisperXService:
         model_name: str,
         device: str,
         compute_type: str,
+        *,
+        language: str | None = None,
     ) -> Optional[Any]:
         models_dir.mkdir(parents=True, exist_ok=True)
         if self._model_exists(models_dir, model_name):
             return None
-        return whisperx.load_model(
-            model_name,
-            device=device,
-            compute_type=compute_type,
-            download_root=str(models_dir),
-        )
+
+        kwargs = {
+            "device": device,
+            "compute_type": compute_type,
+            "download_root": str(models_dir),
+        }
+        if language is not None:
+            kwargs["language"] = language
+
+        try:
+            return whisperx.load_model(model_name, **kwargs)
+        except TypeError as e:
+            # Backward-compatible: some whisperx versions may not accept `language=`
+            if "language" in str(e):
+                kwargs.pop("language", None)
+                return whisperx.load_model(model_name, **kwargs)
+            raise
+
 
     def _resolve_models_dir(
         self,

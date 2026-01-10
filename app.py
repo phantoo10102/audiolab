@@ -24,7 +24,7 @@ from ui.layout import init_styles, render_header
 from ui.editor_view import render_editor_view
 from ui.export_view import render_export_view
 from utils.constants import TEMP_DIR, OUTPUT_DIR
-from utils.file_manager import (
+from utils.fs.io_utils import (
     migrate_legacy_data,
     cleanup_old_temp_files,
 )  # [FIX BUG-019] Added cleanup import
