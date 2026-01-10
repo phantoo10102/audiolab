@@ -248,6 +248,25 @@ def check_whisperx_job():
         if "whisperx_job_id" in st.session_state:
             del st.session_state["whisperx_job_id"]
 
+        st.rerun()
+        return False
+
+    elif status in ("CANCELLED", "TIMEOUT", "EXPIRED", "UNKNOWN"):
+        error_msg = info.get("error")
+        if status == "CANCELLED":
+            st.error("⚠️ WhisperX Cancelled.")
+        elif status == "TIMEOUT":
+            st.error(f"⏱️ WhisperX Timed Out: {error_msg}")
+        elif status == "EXPIRED":
+            st.error(f"⚠️ WhisperX Result Expired: {error_msg}")
+        else:
+            st.error("⚠️ WhisperX Job Not Found.")
+
+        job_runner.clear_job(job_id)
+        if "whisperx_job_id" in st.session_state:
+            del st.session_state["whisperx_job_id"]
+
+        st.rerun()
         return False
 
     return False
