@@ -11,6 +11,7 @@ from state.session_manager import get_manager
 from services.link_import_service import LinkImportService
 from utils.constants import DATA_OUTPUT_DIR
 from utils.logging_config import get_session_id
+from actions.job_utils import check_background_job
 
 
 # Helper getter để tránh truyền state quá nhiều
@@ -27,19 +28,8 @@ def check_denoise_job():
     Trả về True nếu đang chạy, False nếu đã xong hoặc không có job.
     """
     job_id = st.session_state.get("denoise_job_id")
-    if not job_id:
-        return False
 
-    # 1. Kiểm tra trạng thái
-    info = job_runner.get_job(job_id)
-    status = info.get("status")
-
-    if status == "RUNNING":
-        # KHÔNG RERUN Ở ĐÂY. Chỉ báo hiệu là đang chạy.
-        return True
-
-    elif status == "COMPLETED":
-        # 2. Xử lý kết quả thành công
+    def _on_completed(info):
         manager = get_manager()
         state = manager.state
         processor = st.session_state.processor
@@ -64,26 +54,20 @@ def check_denoise_job():
         else:
             st.error("❌ Denoise finished but no output path returned.")
 
-        # Cleanup
-        job_runner.clear_job(job_id)
-        if "denoise_job_id" in st.session_state:
-            del st.session_state["denoise_job_id"]
-
         # Rerun một lần cuối để update UI với file mới
         st.rerun()
-        return False
 
-    elif status == "FAILED":
+    def _on_failed(info):
         # 3. Xử lý lỗi
         error_msg = info.get("error")
         st.error(f"❌ Denoise Failed: {error_msg}")
 
-        job_runner.clear_job(job_id)
-        if "denoise_job_id" in st.session_state:
-            del st.session_state["denoise_job_id"]
-        return False
-
-    return False
+    return check_background_job(
+        job_id,
+        "denoise_job_id",
+        on_completed=_on_completed,
+        on_failed=_on_failed,
+    )
 
 
 def auto_detect_content_callback():
@@ -154,16 +138,8 @@ def denoise_audio_callback():
 def check_trim_job():
     """Kiểm tra job Trim Silence, gọi đầu UI render"""
     job_id = st.session_state.get("trim_job_id")
-    if not job_id:
-        return False
 
-    info = job_runner.get_job(job_id)
-    status = info.get("status")
-
-    if status == "RUNNING":
-        return True
-
-    elif status == "COMPLETED":
+    def _on_completed(info):
         manager = get_manager()
         state = manager.state
         processor = st.session_state.processor
@@ -199,29 +175,19 @@ def check_trim_job():
         else:
             st.error("❌ Trim finished but output missing.")
 
-        # Cleanup
-        job_runner.clear_job(job_id)
-        if "trim_job_id" in st.session_state:
-            del st.session_state["trim_job_id"]
-
         st.rerun()
-        return False
 
-    elif status == "FAILED":
+    def _on_failed(info):
         # Lấy message lỗi từ job_runner
         error_msg = info.get("error", "Unknown error")
         st.error(f"❌ Trim Failed: {error_msg}")
 
-        # QUAN TRỌNG: Phải clear job để UI biết đường tắt loading
-        job_runner.clear_job(job_id)
-        if "trim_job_id" in st.session_state:
-            del st.session_state["trim_job_id"]
-
-        # Không rerun ngay cũng được, để user đọc lỗi,
-        # nhưng nếu muốn tắt thanh progress bar ngay thì gọi st.rerun()
-        return False
-
-    return False
+    return check_background_job(
+        job_id,
+        "trim_job_id",
+        on_completed=_on_completed,
+        on_failed=_on_failed,
+    )
 
 
 def _run_import_task(url: str, session_id: str) -> str:
