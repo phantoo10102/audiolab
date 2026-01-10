@@ -10,6 +10,20 @@ pydub_stub = types.ModuleType("pydub")
 pydub_stub.AudioSegment = object
 sys.modules.setdefault("pydub", pydub_stub)
 sys.modules.setdefault("yaml", types.ModuleType("yaml"))
+if "pydantic" not in sys.modules:
+    pydantic_stub = types.ModuleType("pydantic")
+
+    class _BaseModel:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    def _field(default=None, **kwargs):
+        return default
+
+    pydantic_stub.BaseModel = _BaseModel
+    pydantic_stub.Field = _field
+    pydantic_stub.ConfigDict = dict
+    sys.modules.setdefault("pydantic", pydantic_stub)
 class _FernetStub:
     @staticmethod
     def generate_key():
@@ -33,7 +47,7 @@ huggingface_stub = types.ModuleType("huggingface_hub")
 huggingface_stub.whoami = lambda token=None: {"name": "stub"}
 sys.modules.setdefault("huggingface_hub", huggingface_stub)
 
-from services.separation_service import SeparationService
+from pipelines.separation_pipeline import _find_best_stem_dir, _select_wav_files
 
 
 class TestSeparationOutputDiscovery(unittest.TestCase):
@@ -52,11 +66,9 @@ class TestSeparationOutputDiscovery(unittest.TestCase):
             self._write_stems(fallback_dir)
 
             run_start_ts = 0.0
-            best_dir = SeparationService._find_best_stem_dir(
-                model_dir, run_start_ts
-            )
+            best_dir = _find_best_stem_dir(model_dir, run_start_ts)
             self.assertEqual(best_dir, fallback_dir)
-            stems = SeparationService._build_stems_from_dir(best_dir)
+            stems = _select_wav_files(best_dir)
             self.assertEqual(len(stems), 4)
 
     def test_primary_dir_used_when_present(self):
@@ -69,11 +81,9 @@ class TestSeparationOutputDiscovery(unittest.TestCase):
             self._write_stems(expected_dir)
             self._write_stems(fallback_dir)
 
-            best_dir = SeparationService._find_best_stem_dir(
-                model_dir, run_start_ts=0.0
-            )
+            best_dir = _find_best_stem_dir(model_dir, run_start_ts=0.0)
             self.assertIn(best_dir, {expected_dir, fallback_dir})
-            stems = SeparationService._build_stems_from_dir(expected_dir)
+            stems = _select_wav_files(expected_dir)
             self.assertEqual(len(stems), 4)
 
 

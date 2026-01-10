@@ -25,6 +25,20 @@ sys.modules.setdefault("numpy", types.ModuleType("numpy"))
 pydub_stub = types.ModuleType("pydub")
 pydub_stub.AudioSegment = object
 sys.modules.setdefault("pydub", pydub_stub)
+if "pydantic" not in sys.modules:
+    pydantic_stub = types.ModuleType("pydantic")
+
+    class _BaseModel:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    def _field(default=None, **kwargs):
+        return default
+
+    pydantic_stub.BaseModel = _BaseModel
+    pydantic_stub.Field = _field
+    pydantic_stub.ConfigDict = dict
+    sys.modules.setdefault("pydantic", pydantic_stub)
 
 
 class _FernetStub:

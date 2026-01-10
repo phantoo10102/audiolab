@@ -1,100 +1,28 @@
+import logging
 import os
 import shutil
 import time
-import logging
-import streamlit as st
 from pathlib import Path
 from typing import Set
 
-# Import Constants
-from utils.constants import (
-    PROJECT_ROOT,
-    LEGACY_PATHS,
-    ensure_data_dirs,
-    DATA_TEMP_DIR,
-    DATA_OUTPUT_DIR,
-)
-
-# Import Config & Logging
-try:
-    from utils.logging_config import get_session_id
-except ImportError:
-
-    def get_session_id():
-        return "unknown"
-
+import streamlit as st
 
 from utils.config_loader import config
+from utils.constants import (
+    DATA_OUTPUT_DIR,
+    DATA_TEMP_DIR,
+    LEGACY_PATHS,
+    PROJECT_ROOT,
+    ensure_data_dirs,
+)
+from utils.fs.path_utils import TEMP_HISTORY_DIR, get_unique_history_path
 
 logger = logging.getLogger(__name__)
 
 MAX_HISTORY_STEPS = config.get("system.history.max_steps", 10)
-TEMP_HISTORY_DIR = DATA_TEMP_DIR / "history"
-TEMP_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def get_unique_history_path(original_name: str) -> Path:
-    """
-    Tạo đường dẫn unique cho history file, bảo toàn extension gốc.
-    [FIX BUG #9] Security: Fail-fast path traversal check.
-    """
-    timestamp = int(time.time() * 1000)
-
-    # --- STEP 1: Extract basename only ---
-    safe_basename = Path(original_name).name
-
-    # --- STEP 2: Validate dangerous patterns ---
-    # Defense in depth: Check ký tự nguy hiểm
-    DANGEROUS_PATTERNS = [
-        "\0",  # Null byte injection
-        "../",  # Unix path traversal
-        "..\\",  # Windows path traversal
-        ":",  # Windows drive letter
-        "<",
-        ">",
-        "|",
-        "*",
-        "?",  # Invalid filename chars
-    ]
-
-    # --- STEP 3: FAIL-FAST instead of silent fallback ---
-    for pattern in DANGEROUS_PATTERNS:
-        if pattern in safe_basename:
-            # Log security event
-            logger.warning(
-                "Path traversal/injection attempt blocked",
-                extra={
-                    "original_name": original_name,
-                    "safe_basename": safe_basename,
-                    "detected_pattern": pattern,
-                    "operation": "history_path",
-                    "session_id": get_session_id(),
-                },
-            )
-            # RAISE ERROR để UI bắt và hiển thị
-            raise ValueError(
-                f"Invalid filename: '{original_name}'. "
-                f"Filename contains forbidden character: '{pattern}'"
-            )
-
-    # --- STEP 4: Continue normal processing ---
-    original_path_obj = Path(safe_basename)
-    stem = original_path_obj.stem
-    ext = original_path_obj.suffix
-
-    if not ext:
-        ext = ".mp3"
-
-    # Làm sạch tên file (chỉ giữ ký tự an toàn cho filesystem)
-    clean_stem = "".join(
-        c for c in stem if c.isalnum() or c in (" ", "-", "_")
-    ).rstrip()
-
-    filename = f"hist_{timestamp}_{clean_stem}{ext}"
-    return TEMP_HISTORY_DIR / filename
-
-
-def cleanup_old_history(history_list):
+def cleanup_old_history(history_list) -> None:
     """
     Xóa các file history không còn nằm trong danh sách undo stack.
     Được gọi định kỳ từ SessionManager (mỗi 10 lần push).
@@ -117,9 +45,7 @@ def cleanup_old_history(history_list):
                         try:
                             os.remove(file_path)
                             # [FIX BUG-017] Logging debug thay vì print
-                            logger.debug(
-                                f"Deleted orphan history file: {file_path.name}"
-                            )
+                            logger.debug(f"Deleted orphan history file: {file_path.name}")
                         except OSError:
                             pass
     except Exception as e:
@@ -130,7 +56,7 @@ def cleanup_old_history(history_list):
         )
 
 
-def copy_to_history(source_path: str) -> str:
+def copy_to_history(source_path: str | Path) -> Path | None:
     """
     Copy file hiện tại vào thư mục history.
     Sử dụng Atomic operation để tránh lỗi Race Condition.
@@ -138,31 +64,32 @@ def copy_to_history(source_path: str) -> str:
     if not source_path:
         return None
 
-    dest_path = get_unique_history_path(source_path)
+    source = Path(source_path)
+    dest_path = get_unique_history_path(source.name)
 
     # [FIX BUG-014] Atomic Operation: Try to copy directly.
     # Bắt lỗi FileNotFoundError nếu file nguồn bị xóa ngay trước khi copy.
     try:
-        shutil.copy2(source_path, dest_path)
-        return str(dest_path)
+        shutil.copy2(source, dest_path)
+        return dest_path
     except (FileNotFoundError, OSError) as e:
         # [FIX BUG-017] Log warning
         logger.warning(
-            f"Error copying to history (Source missing)",
-            extra={"source": source_path, "error": str(e)},
+            "Error copying to history (Source missing)",
+            extra={"source": str(source), "error": str(e)},
         )
         return None
     except Exception as e:
         # [FIX BUG-017] Log error system
         logger.error(
-            f"Critical error copying to history",
-            extra={"source": source_path, "error": str(e)},
+            "Critical error copying to history",
+            extra={"source": str(source), "error": str(e)},
             exc_info=True,
         )
         return None
 
 
-def migrate_legacy_data():
+def migrate_legacy_data() -> None:
     """
     Kiểm tra và di chuyển thư mục cũ (temp_audio, output) vào cấu trúc data/ mới.
     Chỉ chạy 1 lần khi khởi động app.
@@ -193,7 +120,7 @@ def migrate_legacy_data():
             try:
                 if not any(old_path.iterdir()):
                     old_path.rmdir()
-            except:
+            except OSError:
                 pass
 
     if migrated_count > 0:
@@ -209,7 +136,7 @@ def get_current_session_files() -> Set[str]:
     Lấy danh sách các file đang được sử dụng trong session hiện tại.
     Bảo vệ chúng khỏi bị xóa nhầm bởi bộ dọn dẹp.
     """
-    session_files = set()
+    session_files: Set[str] = set()
 
     try:
         # 1. Audio đang load
@@ -241,7 +168,7 @@ def get_current_session_files() -> Set[str]:
     return session_files
 
 
-def cleanup_empty_dirs(root_dir: Path):
+def cleanup_empty_dirs(root_dir: Path) -> None:
     """Xóa các thư mục con rỗng."""
     for dirpath, dirnames, filenames in os.walk(root_dir, topdown=False):
         if not dirnames and not filenames:
@@ -251,7 +178,9 @@ def cleanup_empty_dirs(root_dir: Path):
                 pass
 
 
-def cleanup_by_size(target_dir: Path, max_size_mb: int, protect_files: Set[str]):
+def cleanup_by_size(
+    target_dir: Path, max_size_mb: int, protect_files: Set[str]
+) -> None:
     """
     Xóa file cũ nhất nếu thư mục vượt quá dung lượng cho phép.
     """
@@ -288,7 +217,9 @@ def cleanup_by_size(target_dir: Path, max_size_mb: int, protect_files: Set[str])
                 os.remove(file_path)
                 deleted_size += size
                 logger.info(
-                    f"[Cleanup Size] Deleted {file_path.name} ({size/1024:.1f} KB)"
+                    "[Cleanup Size] Deleted %s (%.1f KB)",
+                    file_path.name,
+                    size / 1024,
                 )
             except OSError:
                 pass
@@ -297,7 +228,7 @@ def cleanup_by_size(target_dir: Path, max_size_mb: int, protect_files: Set[str])
         logger.warning(f"Cleanup by size error: {e}")
 
 
-def cleanup_old_temp_files():
+def cleanup_old_temp_files() -> None:
     """
     Hàm dọn dẹp chính. Xóa file tạm dựa trên tuổi và dung lượng.
     Được gọi khi App khởi động (session mới).

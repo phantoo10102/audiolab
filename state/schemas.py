@@ -1,6 +1,7 @@
 # state/schemas.py
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Literal, Union
 from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict
@@ -26,6 +27,15 @@ class SeparationResult(BaseModel):
     output_dir: str
     stems: List[SeparationStem] = Field(default_factory=list)
     error: Optional[str] = None
+
+
+class SeparationArtifacts(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    model_name: str
+    input_path: Path
+    output_dir: Path
+    stem_paths: List[Path] = Field(default_factory=list)
 
 
 # ----------------------------

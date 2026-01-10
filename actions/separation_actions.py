@@ -1,5 +1,8 @@
-import streamlit as st
 import os
+
+import streamlit as st
+
+from actions.job_utils import check_background_job
 from jobs import job_runner
 from services.separation_service import SeparationService
 from state.schemas import SeparationResult, SeparationStem
@@ -109,16 +112,8 @@ def load_selected_stem_callback():
 
 def check_separation_job():
     job_id = st.session_state.get("sep_job_id")
-    if not job_id:
-        return False  # Not running
 
-    info = job_runner.get_job(job_id)
-    status = info.get("status")
-
-    if status == "RUNNING":
-        return True
-
-    elif status == "COMPLETED":
+    def _on_completed(info):
         result_dict = info["result"]
 
         # Convert Dict back to Schema Object
@@ -132,18 +127,16 @@ def check_separation_job():
 
         st.session_state["separation_result"] = res_obj
 
-        job_runner.clear_job(job_id)
-        del st.session_state["sep_job_id"]
         st.toast("✅ Separation Complete!")
         st.rerun()
-        return False
 
-    elif status == "FAILED":
+    def _on_failed(info):
         error = info.get("error")
         st.error(f"❌ Separation Failed: {error}")
 
-        job_runner.clear_job(job_id)
-        del st.session_state["sep_job_id"]
-        return False
-
-    return False
+    return check_background_job(
+        job_id,
+        "sep_job_id",
+        on_completed=_on_completed,
+        on_failed=_on_failed,
+    )

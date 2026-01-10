@@ -7,7 +7,7 @@ from typing import Optional
 from .models import AppState, HistoryEntry
 
 # Import Utils
-from utils.file_manager import copy_to_history, cleanup_old_history, MAX_HISTORY_STEPS
+from utils.fs.io_utils import copy_to_history, cleanup_old_history, MAX_HISTORY_STEPS
 from utils.constants import TEMP_DIR
 
 # Import Service
@@ -113,7 +113,7 @@ class SessionManager:
             return
 
         entry = HistoryEntry(
-            path=history_path,
+            path=str(history_path),
             original_path=original_path,
             duration=duration,
             view_start=self.state.selection.start,
