@@ -36,7 +36,6 @@ _JOB_CANCEL_EVENTS = {}  # {job_id: threading.Event}
 _JOB_STATUS = {}  # {job_id: str}
 _JOB_LOCK = threading.Lock()
 COMPLETED_JOB_TTL = 120
-_EXECUTOR_SHUTDOWN = False
 
 
 def update_progress(job_id: str, percentage: int):
@@ -201,25 +200,3 @@ def clear_job(job_id: str):
             del _JOB_CANCEL_EVENTS[job_id]
         if job_id in _JOB_STATUS:
             del _JOB_STATUS[job_id]
-
-
-def shutdown(reason: str = "CANCELLED"):
-    """Dừng toàn bộ job runner và cố gắng hủy các job đang chạy."""
-    global _EXECUTOR_SHUTDOWN
-    with _JOB_LOCK:
-        job_ids = list(_FUTURES.keys())
-    for job_id in job_ids:
-        request_cancel(job_id, reason=reason)
-    if _EXECUTOR_SHUTDOWN:
-        return
-    _EXECUTOR_SHUTDOWN = True
-    try:
-        _EXECUTOR.shutdown(wait=False, cancel_futures=True)
-    except TypeError:
-        _EXECUTOR.shutdown(wait=False)
-    with _JOB_LOCK:
-        _FUTURES.clear()
-        _JOB_START_TIMES.clear()
-        _JOB_PROGRESS.clear()
-        _JOB_CANCEL_EVENTS.clear()
-        _JOB_STATUS.clear()
