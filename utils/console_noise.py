@@ -1,5 +1,19 @@
+import asyncio
 import logging
 import warnings
+
+
+class AsyncioCancellationFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.name != "asyncio":
+            return True
+        exc_info = record.exc_info
+        if exc_info and isinstance(exc_info[1], asyncio.CancelledError):
+            return False
+        message = record.getMessage()
+        if "CancelledError" in message:
+            return False
+        return True
 
 
 def configure_console_noise() -> None:
@@ -34,3 +48,4 @@ def configure_console_noise() -> None:
     logging.getLogger("streamlit").setLevel(logging.WARNING)
     logging.getLogger("streamlit.watcher").setLevel(logging.ERROR)
     logging.getLogger("lightning_fabric").setLevel(logging.WARNING)
+    logging.getLogger("asyncio").addFilter(AsyncioCancellationFilter())
