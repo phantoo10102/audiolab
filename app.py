@@ -28,9 +28,11 @@ from utils.file_manager import (
     migrate_legacy_data,
     cleanup_old_temp_files,
 )  # [FIX BUG-019] Added cleanup import
+from utils.shutdown import register_shutdown_handlers
 
 # --- APP STARTUP ---
 st.set_page_config(page_title="Audio Lab Ver3", layout="wide")
+register_shutdown_handlers()
 
 if "settings_manager" not in st.session_state:
     st.session_state.settings_manager = SettingsManager()

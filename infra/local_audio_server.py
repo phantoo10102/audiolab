@@ -69,6 +69,26 @@ def start_audio_server():
     return f"http://localhost:{_SERVER_PORT}"
 
 
+def stop_audio_server():
+    global _SERVER_INSTANCE, _SERVER_PORT, _SERVER_THREAD, _SERVING_DIR
+    if not _SERVER_INSTANCE:
+        return
+    try:
+        _SERVER_INSTANCE.shutdown()
+        _SERVER_INSTANCE.server_close()
+    except Exception as exc:
+        logger.warning(
+            "Audio Server shutdown error",
+            extra={"operation": "audio_server_shutdown", "error": str(exc)},
+        )
+    if _SERVER_THREAD:
+        _SERVER_THREAD.join(timeout=2)
+    _SERVER_INSTANCE = None
+    _SERVER_THREAD = None
+    _SERVER_PORT = None
+    _SERVING_DIR = None
+
+
 def get_audio_url(file_path: str):
     base_url = start_audio_server()
 
