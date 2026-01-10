@@ -33,6 +33,17 @@ TEMP_HISTORY_DIR = DATA_TEMP_DIR / "history"
 TEMP_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def resolve_output_path(config_path, default_subdir):
+    """
+    Resolve output directory from config path, falling back to DATA_OUTPUT_DIR.
+    """
+    base_dir = Path(config_path) if config_path else DATA_OUTPUT_DIR
+    if default_subdir:
+        base_dir = base_dir / default_subdir
+    base_dir.mkdir(parents=True, exist_ok=True)
+    return base_dir
+
+
 def get_unique_history_path(original_name: str) -> Path:
     """
     Tạo đường dẫn unique cho history file, bảo toàn extension gốc.

@@ -4,18 +4,11 @@ import time
 import numpy as np
 from pathlib import Path
 from pydub import AudioSegment
-from utils.constants import DATA_OUTPUT_DIR
+from utils.file_manager import resolve_output_path
 from utils.logging_config import get_session_id
 from utils.config_loader import config
 
 logger = logging.getLogger(__name__)
-
-# Import utils path từ dự án
-try:
-    from utils.constants import OUTPUT_DIR
-except ImportError:
-    OUTPUT_DIR = Path("output")
-    OUTPUT_DIR.mkdir(exist_ok=True)
 
 
 class DenoiseService:
@@ -98,7 +91,11 @@ class DenoiseService:
                 output_filename = Path(output_filename).stem + ".wav"
 
             # [FIX ERROR 1] Đảm bảo DATA_OUTPUT_DIR đã import
-            output_path = DATA_OUTPUT_DIR / output_filename
+            output_dir = resolve_output_path(
+                config.get("processing.denoise.output_dir", None),
+                "",
+            )
+            output_path = output_dir / output_filename
 
             # Export
             if reduced_data.dtype == np.float32 or reduced_data.dtype == np.float64:

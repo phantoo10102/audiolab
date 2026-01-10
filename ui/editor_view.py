@@ -1,17 +1,19 @@
 import logging
-import streamlit as st
 from pathlib import Path
 
+import streamlit as st
+
 # Imports
-from utils.constants import DATA_TEMP_DIR, DATA_OUTPUT_DIR
 from utils.os_utils import fmt_time, open_folder
 from actions import editor_actions
 from actions import separation_actions
 
 # [UPDATED IMPORTS] Import check_whisperx_job
 from actions.whisperx_actions import run_whisperx_callback, check_whisperx_job
+from ui.editor_components.export_section import render_export_section
+from ui.editor_components.input_section import render_input_section
+from ui.editor_components.processing_section import render_processing_section
 from ui.waveform_view import render_waveform
-from utils.config_loader import config
 
 logger = logging.getLogger(__name__)
 
@@ -61,91 +63,7 @@ def render_editor_view(manager):
 
     with main_col:
         # --- A. IMPORT SECTION ---
-        with st.expander(
-            "📥 Import Audio / Change Source", expanded=(not state.audio.is_loaded)
-        ):
-            uploaded_file = st.file_uploader(
-                "Audio File",
-                type=["mp3", "wav", "ogg", "m4a", "flac"],
-                label_visibility="collapsed",
-                disabled=is_processing,
-            )
-
-            # Import Logic (Local)
-            if uploaded_file and not is_processing:
-                # Check duplicate
-                is_new_file = True
-                if (
-                    state.audio.original_path
-                    and Path(state.audio.original_path).name
-                    == f"original_{uploaded_file.name}"
-                ):
-                    is_new_file = False
-
-                if is_new_file:
-                    try:
-                        processor = st.session_state.processor
-
-                        # Save file to temp
-                        temp_path = DATA_TEMP_DIR / f"original_{uploaded_file.name}"
-                        uploaded_file.seek(0)
-                        with open(temp_path, "wb") as f:
-                            f.write(uploaded_file.read())
-
-                        # Load & Update State
-                        str_path = str(temp_path)
-                        duration = processor.load_audio(str_path)
-
-                        # Gọi set_audio với path == original_path -> History sẽ được clear
-                        manager.set_audio(
-                            path=str_path, original_path=str_path, duration=duration
-                        )
-                        st.rerun()
-
-                    except Exception as e:
-                        st.error(f"❌ Error during upload: {e}")
-
-            # Import Logic (Link)
-            from actions.editor_actions import handle_import_from_link
-
-            st.divider()
-            col_link_in, col_link_btn = st.columns([3, 1])
-            with col_link_in:
-                link_url = st.text_input(
-                    "Or paste YouTube/TikTok URL",
-                    placeholder="https://...",
-                    label_visibility="collapsed",
-                    disabled=is_processing,  # [Auto disabled when running]
-                )
-            with col_link_btn:
-                if st.button(
-                    "Download Link", disabled=is_processing, use_container_width=True
-                ):
-                    editor_actions.handle_import_from_link(link_url)
-
-            # Info Display
-            if state.audio.is_loaded:
-                st.divider()
-                try:
-                    audio_info = st.session_state.processor.get_audio_info() or {}
-                except Exception as e:
-                    logger.warning(
-                        "Failed to read audio info",
-                        extra={"error": str(e), "operation": "audio_info"},
-                        exc_info=True,
-                    )
-                    audio_info = {}
-
-                c1, c2, c3, c4 = st.columns(4)
-                file_name = (
-                    Path(state.audio.current_path).name
-                    if state.audio.current_path
-                    else "N/A"
-                )
-                c1.caption(f"File: **{file_name}**")
-                c2.caption(f"Rate: **{audio_info.get('sample_rate', 'N/A')}Hz**")
-                c3.caption(f"Bitrate: **{audio_info.get('bitrate', 'N/A')}**")
-                c4.caption(f"Duration: **{state.audio.duration:.2f}s**")
+        render_input_section(manager, state, is_processing)
 
         # --- B. EDITOR BODY ---
         if state.audio.is_loaded:
@@ -423,82 +341,9 @@ def render_editor_view(manager):
 
     # SIDEBAR
     with side_col:
-        render_sidebar_tools(
-            manager, state, is_processing, is_denoising, is_trimming, is_separating
-        )
+        render_processing_section(state, is_processing)
+        render_export_section(state)
 
     # Fragment polling
     poll_background_jobs()
 
-
-def render_sidebar_tools(
-    manager, state, is_processing, is_denoising, is_trimming, is_separating
-):
-    with st.container(border=True):
-        st.markdown("#### 🛠️ Tools")
-        st.button(
-            "✂️ Auto Trim Silence",
-            use_container_width=True,
-            disabled=not state.audio.is_loaded or is_processing,
-            on_click=editor_actions.trim_silence_callback,
-        )
-        st.button(
-            "🧹 AI Denoise",
-            use_container_width=True,
-            disabled=not state.audio.is_loaded or is_processing,
-            on_click=editor_actions.denoise_audio_callback,
-        )
-
-    with st.container(border=True):
-        st.markdown("#### 🎸 Separation")
-        has_res = (
-            "separation_result" in st.session_state
-            and st.session_state.separation_result
-        )
-        opts = (
-            [s.name for s in st.session_state.separation_result.stems]
-            if has_res
-            else ["No result"]
-        )
-
-        st.selectbox(
-            "Stems",
-            opts,
-            key="sep_selected_stem_name",
-            disabled=not has_res or is_processing,
-        )
-
-        st.button(
-            "🚀 Run Separation",
-            use_container_width=True,
-            disabled=not state.audio.is_loaded or is_processing,
-            on_click=separation_actions.start_separation_callback,
-        )
-
-        if has_res:
-            st.button(
-                "📥 Load Stem",
-                use_container_width=True,
-                disabled=is_processing,
-                on_click=separation_actions.load_selected_stem_callback,
-            )
-
-    format_opts = config.get("audio.export.format_options", ["mp3", "wav", "flac"])
-    bitrate_opts = config.get("audio.export.bitrate_options", ["128k", "320k"])
-
-    with st.container(border=True):
-        st.markdown("#### 💾 Export")
-        st.selectbox(
-            "Format",
-            format_opts,  # Used config options
-            key="export_format",
-            disabled=not state.audio.is_loaded,
-        )
-        if st.session_state.get("export_format") == "mp3":
-            st.selectbox("Bitrate", bitrate_opts, key="export_bitrate")
-
-        st.button(
-            "📂 Open Output",
-            use_container_width=True,
-            on_click=lambda: open_folder(str(DATA_OUTPUT_DIR.absolute())),
-        )

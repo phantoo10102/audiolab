@@ -3,19 +3,15 @@ import os
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
+
 from pydub import AudioSegment, silence
+
+from utils.config_loader import config
+from utils.file_manager import resolve_output_path
 from utils.logging_config import get_session_id
 
 # Setup logger chuẩn thay cho print
 logger = logging.getLogger(__name__)
-
-# Import utils path
-try:
-    from utils.constants import OUTPUT_DIR
-except ImportError:
-    OUTPUT_DIR = Path("output")
-    OUTPUT_DIR.mkdir(exist_ok=True)
-
 
 class TrimSilenceService:
     """Service cắt khoảng lặng (Windows-friendly, logging chuẩn)."""
@@ -54,7 +50,11 @@ class TrimSilenceService:
         file_name = Path(input_path).name
         if output_path is None:
             clean_name = f"trim_{Path(file_name).stem}.wav"
-            output_path = str(OUTPUT_DIR / clean_name)
+            output_dir = resolve_output_path(
+                config.get("processing.trim.output_dir", None),
+                "",
+            )
+            output_path = str(output_dir / clean_name)
 
         parent_dir = os.path.dirname(output_path)
         if parent_dir:
