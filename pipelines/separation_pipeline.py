@@ -4,15 +4,12 @@ import os
 import subprocess
 import sys
 import time
-from pathlib import Path
-<<<<<<< HEAD
+from pathlib import Path 
 from typing import List
 
-from state.schemas import SeparationArtifacts
-=======
+from state.schemas import SeparationArtifacts 
 from typing import Dict, Any, List
-
->>>>>>> origin/main
+ 
 from utils.logging_config import get_session_id
 
 logger = logging.getLogger(__name__)
