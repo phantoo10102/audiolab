@@ -34,6 +34,7 @@ _JOB_START_TIMES = {}  # {job_id: timestamp}
 _JOB_PROGRESS = {}  # {job_id: int (0-100)}
 _JOB_CANCEL_EVENTS = {}  # {job_id: threading.Event}
 _JOB_STATUS = {}  # {job_id: str}
+_JOB_COMPLETED_TIMES = {}  # {job_id: timestamp}
 _JOB_LOCK = threading.Lock()
 COMPLETED_JOB_TTL = 120
 
@@ -148,22 +149,29 @@ def get_job(job_id: str):
             error = "Job exceeded time limit"
         return {"status": current_status, "error": error}
 
-    # --- CHECK 3: Result Expired? ---
-    # TTL check chỉ áp dụng cho completed jobs (để UI kịp lấy kết quả)
-    if current_age > COMPLETED_JOB_TTL:
-        logger.debug(
-            f"Auto-cleanup expired job result: {job_id}",
-            extra={"job_id": job_id, "age_seconds": int(current_age)},
-        )
-        clear_job(job_id)
-        return {
-            "status": "EXPIRED",
-            "error": f"Job result expired after {COMPLETED_JOB_TTL}s",
-        }
-
-    # --- CHECK 4: Get Result (Success or Failure) ---
+    # --- CHECK 3: Get Result (Success or Failure) ---
     try:
         result = future.result()
+        with _JOB_LOCK:
+            completed_time = _JOB_COMPLETED_TIMES.get(job_id)
+            if completed_time is None:
+                completed_time = time.time()
+                _JOB_COMPLETED_TIMES[job_id] = completed_time
+
+        if time.time() - completed_time > COMPLETED_JOB_TTL:
+            logger.debug(
+                f"Auto-cleanup expired job result: {job_id}",
+                extra={
+                    "job_id": job_id,
+                    "age_seconds": int(time.time() - completed_time),
+                },
+            )
+            clear_job(job_id)
+            return {
+                "status": "EXPIRED",
+                "error": f"Job result expired after {COMPLETED_JOB_TTL}s",
+            }
+
         # Success - return result WITHOUT cleanup (UI needs to read it first)
         return {"status": "COMPLETED", "result": result, "progress": 100}
 
@@ -200,3 +208,5 @@ def clear_job(job_id: str):
             del _JOB_CANCEL_EVENTS[job_id]
         if job_id in _JOB_STATUS:
             del _JOB_STATUS[job_id]
+        if job_id in _JOB_COMPLETED_TIMES:
+            del _JOB_COMPLETED_TIMES[job_id]
