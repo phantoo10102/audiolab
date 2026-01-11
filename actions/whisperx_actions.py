@@ -226,13 +226,9 @@ def check_whisperx_job():
 
         st.toast(f"✅ WhisperX Complete ({result['total_duration']:.1f}s)!")
 
-        # Force Rerun để hiển thị kết quả ngay lập tức
-        st.rerun()
-
     def _on_failed(info):
         error_msg = info.get("error")
         st.error(f"❌ WhisperX Failed: {error_msg}")
-        st.rerun()
 
     def _on_terminal(info):
         status = info.get("status")
@@ -245,7 +241,6 @@ def check_whisperx_job():
             st.error(f"⚠️ WhisperX Result Expired: {error_msg}")
         else:
             st.error("⚠️ WhisperX Job Not Found.")
-        st.rerun()
 
     return check_background_job(
         job_id,

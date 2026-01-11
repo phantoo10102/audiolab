@@ -76,7 +76,7 @@ class TestWhisperxJobStatus(unittest.TestCase):
         self.assertNotIn("whisperx_job_id", streamlit_stub.session_state)
         self.assertEqual(streamlit_stub.session_state.get("whisperx_result"), result)
         clear_job.assert_called_once_with("job-123")
-        streamlit_stub.rerun.assert_called_once()
+        streamlit_stub.rerun.assert_not_called()
 
     def test_failed_clears_job_and_reruns(self):
         with mock.patch.object(
@@ -89,7 +89,7 @@ class TestWhisperxJobStatus(unittest.TestCase):
         self.assertFalse(running)
         self.assertNotIn("whisperx_job_id", streamlit_stub.session_state)
         clear_job.assert_called_once_with("job-123")
-        streamlit_stub.rerun.assert_called_once()
+        streamlit_stub.rerun.assert_not_called()
 
     def test_terminal_states_clear_job(self):
         terminal_statuses = ["CANCELLED", "TIMEOUT", "EXPIRED", "UNKNOWN"]
@@ -109,7 +109,7 @@ class TestWhisperxJobStatus(unittest.TestCase):
                 self.assertFalse(running)
                 self.assertNotIn("whisperx_job_id", streamlit_stub.session_state)
                 clear_job.assert_called_once_with("job-123")
-                streamlit_stub.rerun.assert_called_once()
+                streamlit_stub.rerun.assert_not_called()
 
 
 if __name__ == "__main__":
