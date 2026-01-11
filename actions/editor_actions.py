@@ -11,7 +11,7 @@ from state.session_manager import get_manager
 from services.link_import_service import LinkImportService
 from utils.constants import DATA_OUTPUT_DIR
 from utils.logging_config import get_session_id
-from actions.job_utils import check_background_job
+from actions.job_utils import check_background_job, ensure_audio_available
 
 
 # Helper getter để tránh truyền state quá nhiều
@@ -106,8 +106,11 @@ def denoise_audio_callback():
     manager, state, processor = get_state_objects()
 
     # 1. Validation: Kiểm tra file có tồn tại không
-    if not state.audio.current_path or not os.path.exists(state.audio.current_path):
-        st.error("Audio not loaded or file missing.")
+    if not ensure_audio_available(
+        state,
+        manager=manager,
+        error_message="Audio not loaded or file missing.",
+    ):
         return
 
     # 2. Push History (Snapshot): Lưu lại trạng thái hiện tại để có thể Undo sau này
@@ -205,8 +208,11 @@ def trim_silence_callback():
     manager, state, processor = get_state_objects()
 
     # 1. Validation
-    if not state.audio.current_path or not os.path.exists(state.audio.current_path):
-        st.error("Audio not loaded.")
+    if not ensure_audio_available(
+        state,
+        manager=manager,
+        error_message="Audio not loaded.",
+    ):
         return
 
     # 2. Push History (Undo point)
@@ -376,6 +382,9 @@ def handle_import_from_link(url: str):
     manager, state, processor = get_state_objects()
     session_id = get_session_id()
 
+    if not ensure_audio_available(state, manager=manager, allow_empty=True):
+        return
+
     # Submit Job
     job_id = job_runner.submit(_run_import_task, url=url.strip(), session_id=session_id)
 
@@ -390,16 +399,8 @@ def check_import_job():
     Được gọi bởi Fragment trong UI.
     """
     job_id = st.session_state.get("import_job_id")
-    if not job_id:
-        return False
 
-    info = job_runner.get_job(job_id)
-    status = info.get("status")
-
-    if status == "RUNNING":
-        return True
-
-    elif status == "COMPLETED":
+    def _on_completed(info):
         # Lấy kết quả (path file)
         path_str = info["result"]
 
@@ -424,24 +425,16 @@ def check_import_job():
         else:
             st.error("❌ Download báo thành công nhưng không thấy file.")
 
-        # Cleanup
-        job_runner.clear_job(job_id)
-        if "import_job_id" in st.session_state:
-            del st.session_state["import_job_id"]
-
         # Rerun để hiển thị Waveform mới
         st.rerun()
-        return False
 
-    elif status == "FAILED":
+    def _on_failed(info):
         error_msg = info.get("error")
         st.error(f"❌ Download thất bại: {error_msg}")
 
-        # Cleanup
-        job_runner.clear_job(job_id)
-        if "import_job_id" in st.session_state:
-            del st.session_state["import_job_id"]
-
-        return False
-
-    return False
+    return check_background_job(
+        job_id,
+        "import_job_id",
+        on_completed=_on_completed,
+        on_failed=_on_failed,
+    )

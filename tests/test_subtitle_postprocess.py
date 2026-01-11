@@ -103,6 +103,27 @@ class TestSubtitlePostprocess(unittest.TestCase):
             if idx > 0:
                 self.assertGreaterEqual(seg["start"], processed[idx - 1]["end"])
 
+    def test_monotonic_timecodes_across_segments(self):
+        segments = [
+            {
+                "start": 0.0,
+                "end": 8.0,
+                "text": "This should split into multiple lines because it is long.",
+            },
+            {
+                "start": 8.0,
+                "end": 14.0,
+                "text": "Second segment stays after the first segment.",
+            },
+        ]
+
+        processed = postprocess_subtitle_segments(segments, lang="en")
+
+        for idx, seg in enumerate(processed):
+            self.assertLessEqual(seg["start"], seg["end"])
+            if idx > 0:
+                self.assertGreaterEqual(seg["start"], processed[idx - 1]["end"])
+
 
 if __name__ == "__main__":
     unittest.main()

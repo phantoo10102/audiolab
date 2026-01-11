@@ -13,6 +13,7 @@ from services.whisperx_service import whisperx_service
 from state.session_manager import get_manager
 from utils.constants import DATA_OUTPUT_DIR
 from utils.logging_config import get_session_id
+from actions.job_utils import check_background_job, ensure_audio_available
 
 logger = logging.getLogger(__name__)
 
@@ -154,8 +155,11 @@ def run_whisperx_callback():
         st.error("⚠️ Vui lòng import file audio trước khi chạy.")
         return
 
-    if not os.path.exists(state.audio.current_path):
-        st.error("❌ File audio gốc không tồn tại.")
+    if not ensure_audio_available(
+        state,
+        manager=manager,
+        missing_message="❌ File audio gốc không tồn tại.",
+    ):
         return
 
     # 2. Configuration (Lấy từ UI state nếu có, hiện tại dùng default/hardcode cho Phase 1)
@@ -213,45 +217,25 @@ def check_whisperx_job():
     Return: True nếu đang chạy, False nếu đã xong/lỗi/không có job.
     """
     job_id = st.session_state.get("whisperx_job_id")
-    if not job_id:
-        return False
 
-    info = job_runner.get_job(job_id)
-    status = info.get("status")
-
-    if status == "RUNNING":
-        return True
-
-    elif status == "COMPLETED":
+    def _on_completed(info):
         result = info["result"]
 
         # Update Session State với kết quả
         st.session_state.whisperx_result = result
 
-        # Cleanup Job
-        job_runner.clear_job(job_id)
-        if "whisperx_job_id" in st.session_state:
-            del st.session_state["whisperx_job_id"]
-
         st.toast(f"✅ WhisperX Complete ({result['total_duration']:.1f}s)!")
 
         # Force Rerun để hiển thị kết quả ngay lập tức
         st.rerun()
-        return False
 
-    elif status == "FAILED":
+    def _on_failed(info):
         error_msg = info.get("error")
         st.error(f"❌ WhisperX Failed: {error_msg}")
-
-        # Cleanup
-        job_runner.clear_job(job_id)
-        if "whisperx_job_id" in st.session_state:
-            del st.session_state["whisperx_job_id"]
-
         st.rerun()
-        return False
 
-    elif status in ("CANCELLED", "TIMEOUT", "EXPIRED", "UNKNOWN"):
+    def _on_terminal(info):
+        status = info.get("status")
         error_msg = info.get("error")
         if status == "CANCELLED":
             st.error("⚠️ WhisperX Cancelled.")
@@ -261,12 +245,12 @@ def check_whisperx_job():
             st.error(f"⚠️ WhisperX Result Expired: {error_msg}")
         else:
             st.error("⚠️ WhisperX Job Not Found.")
-
-        job_runner.clear_job(job_id)
-        if "whisperx_job_id" in st.session_state:
-            del st.session_state["whisperx_job_id"]
-
         st.rerun()
-        return False
 
-    return False
+    return check_background_job(
+        job_id,
+        "whisperx_job_id",
+        on_completed=_on_completed,
+        on_failed=_on_failed,
+        on_terminal=_on_terminal,
+    )

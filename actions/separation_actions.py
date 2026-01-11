@@ -2,7 +2,7 @@ import os
 
 import streamlit as st
 
-from actions.job_utils import check_background_job
+from actions.job_utils import check_background_job, ensure_audio_available
 from jobs import job_runner
 from services.separation_service import SeparationService
 from state.schemas import SeparationResult, SeparationStem
@@ -22,6 +22,13 @@ def start_separation_callback():
 
     if not state.audio.is_loaded:
         st.error("No audio loaded.")
+        return
+
+    if not ensure_audio_available(
+        state,
+        manager=manager,
+        error_message="No audio loaded.",
+    ):
         return
 
     # Clear old results
