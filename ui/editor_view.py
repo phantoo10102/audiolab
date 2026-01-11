@@ -49,7 +49,7 @@ def render_editor_view(manager):
     is_denoising = editor_actions.check_denoise_job()
     is_trimming = editor_actions.check_trim_job()
     is_separating = separation_actions.check_separation_job()
-    is_whisperx = bool(st.session_state.get("whisperx_job_id"))
+    is_whisperx = check_whisperx_job()
     is_importing = bool(st.session_state.get("import_job_id"))
 
     is_processing = (
@@ -346,4 +346,3 @@ def render_editor_view(manager):
 
     # Fragment polling
     poll_background_jobs()
-
